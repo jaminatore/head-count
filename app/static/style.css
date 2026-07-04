@@ -1,0 +1,88 @@
+:root {
+    --bg: #0f1012;
+    --text: #ffffff;
+    --muted: #92accf;
+    --accent: #4bd4fe;
+    --gutter: 50px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    min-height: 100vh;
+    background-color: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--gutter);
+    position: relative;
+}
+
+/* radial glow, like their .glow */
+body::before {
+    content: "";
+    position: fixed;
+    top: -60vh;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 150vw;
+    height: 150vh;
+    background: radial-gradient(rgba(46, 139, 255, 0.25), transparent 60%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+main {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 2rem;
+}
+
+.label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--accent);
+}
+
+h1 {
+    font-size: clamp(2rem, 6vw, 3.5rem);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+    line-height: 1.1;
+}
+
+.qr-slot {
+    aspect-ratio: 1 / 1;
+    width: min(320px, 70vw);
+    display: grid;
+    place-items: center;
+    border-radius: 0.5rem;
+    background: #121e28;
+    box-shadow: 0 0 0 3px rgba(75, 212, 254, 0.15) inset,
+                0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+footer {
+    position: relative;
+    z-index: 1;
+    margin-top: 3rem;
+    font-size: 0.75rem;
+    color: rgba(75, 212, 254, 0.4);
+}
+
+code {
+    color: var(--accent);
+}
