@@ -53,7 +53,8 @@ def current():
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok123"}
+    return {"status": "ok123",
+            "instance": INSTANCE_ID}
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
