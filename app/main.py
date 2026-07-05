@@ -7,6 +7,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import qrcode
 import base64
@@ -15,6 +18,8 @@ import asyncio
 import redis
 
 from contextlib import asynccontextmanager
+
+from db import init_db
 
 INSTANCE_ID = os.environ.get("INSTANCE_ID", "local")
 SESSION_TIME = 20
@@ -31,9 +36,7 @@ def get_current_token():
     return redis_client.get(TOKEN_KEY)
 
 # Probably want to remove this dict if it's the only state - we can change this to a global var later on
-STATE = {
-    "ends_at": None,
-}
+STATE = {"ends_at": None}
 
 async def rotate_tokens():
     while True:
@@ -43,6 +46,7 @@ async def rotate_tokens():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_db
     task = asyncio.create_task(rotate_tokens())
     yield
     task.cancel()
