@@ -6,25 +6,38 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+
 import os
 import qrcode
 import base64
 import io
 import asyncio
+import redis
+
 from contextlib import asynccontextmanager
 
 INSTANCE_ID = os.environ.get("INSTANCE_ID", "local")
 SESSION_TIME = 20
-RELOAD_TIME = 5
+RELOAD_TIME = 1
+
+# Redis client + key 
+redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
+TOKEN_KEY = "live_token"
+
+def set_current_token(token):
+    redis_client.set(TOKEN_KEY, token)
+
+def get_current_token():
+    return redis_client.get(TOKEN_KEY)
 
 STATE = {
-    "live_token": None,
     "ends_at": None,
 }
 
 async def rotate_tokens():
     while True:
-        STATE["live_token"] = secrets.token_urlsafe(16)
+        token = secrets.token_urlsafe(16)
+        set_current_token(token)
         await asyncio.sleep(RELOAD_TIME)
 
 @asynccontextmanager
@@ -46,14 +59,15 @@ def start_session():
 @app.get("/current")
 def current():
     ends_at = STATE["ends_at"]
-    token = STATE["live_token"]
+    token = get_current_token()
     if ends_at is None or time.time() > ends_at or token is None:
         return {"active": False}
     return {"active": True, "token": token, "qr": make_qr_data_url(token)}
 
 @app.get("/healthz")
 def healthz():
-    return {"status": "ok123"}
+    return {"status": "ok123",
+            "instance": INSTANCE_ID}
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
