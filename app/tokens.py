@@ -19,4 +19,5 @@ def validate_scan(token, student, session):
     claimed = redis_client.set(record, "1", nx=True, ex=RELOAD_TIME)
     if not claimed:
         return False, "Already scanned"
+    # TODO: persist attendance to Postgres / DB
     return True, "Scan successful"
