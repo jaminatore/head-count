@@ -30,6 +30,7 @@ def set_current_token(token):
 def get_current_token():
     return redis_client.get(TOKEN_KEY)
 
+# Probably want to remove this dict if it's the only state - we can change this to a global var later on
 STATE = {
     "ends_at": None,
 }
