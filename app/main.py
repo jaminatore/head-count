@@ -12,6 +12,9 @@ from app.tokens import set_current_token, get_current_token
 from app.tokens import RELOAD_TIME
 from app.tokens import validate_scan
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import qrcode
 import base64
@@ -20,12 +23,13 @@ import asyncio
 
 from contextlib import asynccontextmanager
 
+from db import init_db
+
 INSTANCE_ID = os.environ.get("INSTANCE_ID", "local")
 SESSION_TIME = 30
 
-STATE = {
-    "ends_at": None,
-}
+# Probably want to remove this dict if it's the only state - we can change this to a global var later on
+STATE = {"ends_at": None}
 
 class ScanRequest(BaseModel):
     token: str
@@ -41,6 +45,7 @@ async def rotate_tokens():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await init_db
     task = asyncio.create_task(rotate_tokens())
     yield
     task.cancel()

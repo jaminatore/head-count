@@ -3,3 +3,6 @@ uvicorn[standard]
 jinja2
 qrcode[pil]
 redis
+sqlmodel
+asyncpg
+python-dotenv
