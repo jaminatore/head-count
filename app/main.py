@@ -6,33 +6,32 @@ from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
+
+from app.tokens import set_current_token, get_current_token
+from app.tokens import RELOAD_TIME
+from app.tokens import validate_scan
 
 import os
 import qrcode
 import base64
 import io
 import asyncio
-import redis
 
 from contextlib import asynccontextmanager
 
 INSTANCE_ID = os.environ.get("INSTANCE_ID", "local")
-SESSION_TIME = 20
-RELOAD_TIME = 1
-
-# Redis client + key 
-redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
-TOKEN_KEY = "live_token"
-
-def set_current_token(token):
-    redis_client.set(TOKEN_KEY, token)
-
-def get_current_token():
-    return redis_client.get(TOKEN_KEY)
+SESSION_TIME = 30
 
 STATE = {
     "ends_at": None,
 }
+
+class ScanRequest(BaseModel):
+    token: str
+    student: str
+    session: str
+
 
 async def rotate_tokens():
     while True:
@@ -55,6 +54,11 @@ templates = Jinja2Templates(directory="app/templates")
 def start_session():
     STATE["ends_at"] = time.time() + SESSION_TIME
     return {"ends_at": STATE["ends_at"]}
+
+@app.post("/scan")
+def scan(payload: ScanRequest):
+    valid, message = validate_scan(payload.token, payload.student, payload.session)
+    return {"valid": valid, "message": message}
 
 @app.get("/current")
 def current():
