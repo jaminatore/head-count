@@ -5,13 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Attendance</title>
     <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/admin.js" defer></script>
 </head>
 <body>
     <main>
-        <span class="label">Live Attendance • Est. 2025</span>
+        <span class="label">Live Attendance • Est. 2026</span>
         <h1>Attendance</h1>
         <div class="qr-slot">
-            <img src="{{ qr }}" alt="QR Code">
+            <img id="qr" src="{{ qr }}" alt="QR Code">
+        </div>
+        <div>
+            <button id="start">Start Attendance</button>
+            <p id="status"></p>
         </div>
     </main>
     <footer>served by instance <code>{{ instance }}</code></footer>
