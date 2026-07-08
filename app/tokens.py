@@ -1,7 +1,9 @@
 import redis
+import os
 
 #  Redis client + key 
-redis_client = redis.Redis(host='localhost', port=6379, decode_responses=True)
+host = os.environ.get("REDIS_HOST", "localhost")
+redis_client = redis.Redis(host=host, port=6379, decode_responses=True)
 TOKEN_KEY = "live_token"
 RELOAD_TIME = 5
 

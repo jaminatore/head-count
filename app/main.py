@@ -23,7 +23,7 @@ import asyncio
 
 from contextlib import asynccontextmanager
 
-from db import init_db
+from app.db import init_db
 
 INSTANCE_ID = os.environ.get("INSTANCE_ID", "local")
 SESSION_TIME = 30
@@ -45,7 +45,7 @@ async def rotate_tokens():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db
+    await init_db()
     task = asyncio.create_task(rotate_tokens())
     yield
     task.cancel()
