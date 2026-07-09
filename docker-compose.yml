@@ -4,6 +4,8 @@ services:
   app:
     build: .
     env_file: .env
+    environment:
+      - INSTANCE_ID=app-{{.Task.Slot}}
     depends_on:
       postgres:
         condition: service_healthy

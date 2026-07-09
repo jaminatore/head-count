@@ -25,7 +25,7 @@ from contextlib import asynccontextmanager
 
 from app.db import init_db
 
-INSTANCE_ID = os.environ.get("INSTANCE_ID", "local")
+INSTANCE_ID = os.environ.get("HOSTNAME", "local")
 SESSION_TIME = 30
 
 # Probably want to remove this dict if it's the only state - we can change this to a global var later on
