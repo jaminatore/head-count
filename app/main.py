@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from app.tokens import set_current_token, get_current_token
 from app.tokens import RELOAD_TIME
-from app.tokens import validate_scan
+from app.scans import validate_scan
 
 from dotenv import load_dotenv
 load_dotenv()
