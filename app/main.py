@@ -1,16 +1,19 @@
 import secrets
 import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi import Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession as DBSession
 
-from app.tokens import set_current_token, get_current_token
-from app.tokens import RELOAD_TIME
-from app.tokens import validate_scan
+from app.tokens import (
+    set_current_token, get_current_token, validate_scan,
+    mark_session_active, mark_session_inactive, get_active_sessions,
+    RELOAD_TIME,
+)
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -23,29 +26,26 @@ import asyncio
 
 from contextlib import asynccontextmanager
 
-from app.db import init_db
+from app.db import init_db, get_session
+from app.models import Session as SessionModel
 
 INSTANCE_ID = os.environ.get("HOSTNAME", "local")
 SESSION_TIME = 30
-
-# Probably want to remove this dict if it's the only state - we can change this to a global var later on
-STATE = {"ends_at": None}
 
 class ScanRequest(BaseModel):
     token: str
     student: str
     session: str
 
-
 async def rotate_tokens():
     while True:
-        token = secrets.token_urlsafe(16)
-        set_current_token(token)
+        for session_id in get_active_sessions():
+            set_current_token(session_id, secrets.token_urlsafe(16))
         await asyncio.sleep(RELOAD_TIME)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    await init_db() # With migrate now in compose.yml, this (should) do nothing important. But it's an extra check for safety
     task = asyncio.create_task(rotate_tokens())
     yield
     task.cancel()
@@ -56,22 +56,25 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 @app.post("/session/start")
-def start_session():
-    STATE["ends_at"] = time.time() + SESSION_TIME
-    return {"ends_at": STATE["ends_at"]}
+async def start_session(course_id: str, db: DBSession = Depends(get_session)):
+    session = SessionModel(course_id=course_id)
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+    mark_session_active(str(session.session_id))
+    return {"session_id": str(session.session_id)}
 
 @app.post("/scan")
 def scan(payload: ScanRequest):
-    valid, message = validate_scan(payload.token, payload.student, payload.session)
+    valid, message = validate_scan(payload.session, payload.token, payload.student)
     return {"valid": valid, "message": message}
 
 @app.get("/current")
-def current():
-    ends_at = STATE["ends_at"]
-    token = get_current_token()
-    if ends_at is None or time.time() > ends_at or token is None:
+def current(session_id):
+    token = get_current_token(session_id)
+    if token is None:
         return {"active": False}
-    return {"active": True, "token": token, "qr": make_qr_data_url(token)}
+    return {"active": True, "token": token, "qr": make_qr_data_url(f"{session_id}:{token}")}
 
 @app.get("/healthz")
 def healthz():
