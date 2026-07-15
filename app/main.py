@@ -1,29 +1,21 @@
-import secrets
-import time
+import os, qrcode, base64, io, asyncio, secrets, time
 
-from fastapi import FastAPI
-from fastapi import Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+
+from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
-
-from app.tokens import set_current_token, get_current_token
-from app.tokens import RELOAD_TIME
-from app.scans import validate_scan
-
 from dotenv import load_dotenv
+
+from app.tokens import set_current_token, get_current_token, RELOAD_TIME
+from app.scans import validate_scan
+from app.db import init_db, get_session
+
 load_dotenv()
 
-import os
-import qrcode
-import base64
-import io
-import asyncio
-
 from contextlib import asynccontextmanager
-
-from app.db import init_db
 
 INSTANCE_ID = os.environ.get("HOSTNAME", "local")
 SESSION_TIME = 30
@@ -61,8 +53,8 @@ def start_session():
     return {"ends_at": STATE["ends_at"]}
 
 @app.post("/scan")
-def scan(payload: ScanRequest):
-    valid, message = validate_scan(payload.token, payload.student, payload.session)
+async def scan(payload: ScanRequest, db: AsyncSession = Depends(get_session)):
+    valid, message = await validate_scan(payload.token, payload.student, payload.session, db)
     return {"valid": valid, "message": message}
 
 @app.get("/current")

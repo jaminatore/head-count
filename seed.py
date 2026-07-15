@@ -4,7 +4,7 @@
 import asyncio
 from sqlalchemy import select
 from app.db import async_session, init_db
-from app.models import User, Course, Enrollment
+from app.models import User, Course, Enrollment, Session
 
 async def seed():
     await init_db()
@@ -27,6 +27,14 @@ async def seed():
         session.add(course)
         await session.commit()
         await session.refresh(course)
+
+        sess = Session(course_id=course.course_id)
+        session.add(sess)
+        await session.commit()
+        await session.refresh(sess)
+
+        print(f"session_id: {sess.session_id}")
+        print(f"user_id: {student.user_id}")
 
         enrollment = Enrollment(course_id=course.course_id, user_id=student.user_id)
         session.add(enrollment)
