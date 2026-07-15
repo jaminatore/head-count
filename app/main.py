@@ -28,6 +28,7 @@ from contextlib import asynccontextmanager
 
 from app.db import init_db, get_session
 from app.models import Session as SessionModel
+from app.models import utcnow # cause I'm lazy and don't want to redefine it rn
 
 INSTANCE_ID = os.environ.get("HOSTNAME", "local")
 SESSION_TIME = 30
@@ -61,8 +62,11 @@ async def start_session(course_id: str, db: DBSession = Depends(get_session)):
     db.add(session)
     await db.commit()
     await db.refresh(session)
-    mark_session_active(str(session.session_id))
-    return {"session_id": str(session.session_id)}
+
+    session_id = str(session.session_id)
+    mark_session_active(session_id)
+    set_current_token(session_id, secrets.token_urlsafe(16))
+    return {"session_id": session_id}
 
 @app.post("/scan")
 def scan(payload: ScanRequest):
@@ -70,7 +74,10 @@ def scan(payload: ScanRequest):
     return {"valid": valid, "message": message}
 
 @app.get("/current")
-def current(session_id):
+def current(session_id: str):
+    active_ids = {str(s) for s in get_active_sessions()}
+    if session_id not in active_ids:
+        return {"active": False}
     token = get_current_token(session_id)
     if token is None:
         return {"active": False}
@@ -93,3 +100,13 @@ def make_qr_data_url(data: str) -> str:
 
     b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
     return f"data:image/png;base64,{b64}"
+
+@app.post("/session/end")
+async def end_session(session_id: str, db: DBSession = Depends(get_session)):
+    result = await db.get(SessionModel, session_id)
+    if result:
+        result.status = "ended"
+        result.ends_at = utcnow()
+        await db.commit()
+    mark_session_inactive(session_id)
+    return {"status": "ended"}
