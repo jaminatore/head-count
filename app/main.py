@@ -1,32 +1,26 @@
-import secrets
-import time
+import os, qrcode, base64, io, asyncio, secrets, time
 
-from fastapi import FastAPI, Depends
-from fastapi import Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+
+from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession as DBSession
+from dotenv import load_dotenv
+
+from app.scans import validate_scan
+from app.db import init_db, get_session
 
 from app.tokens import (
-    set_current_token, get_current_token, validate_scan,
+    set_current_token, get_current_token,
     mark_session_active, mark_session_inactive, get_active_sessions,
     RELOAD_TIME,
 )
 
-from dotenv import load_dotenv
 load_dotenv()
 
-import os
-import qrcode
-import base64
-import io
-import asyncio
-
 from contextlib import asynccontextmanager
-
-from app.db import init_db, get_session
 from app.models import Session as SessionModel
 from app.models import utcnow # cause I'm lazy and don't want to redefine it rn
 
@@ -69,8 +63,8 @@ async def start_session(course_id: str, db: DBSession = Depends(get_session)):
     return {"session_id": session_id}
 
 @app.post("/scan")
-def scan(payload: ScanRequest):
-    valid, message = validate_scan(payload.session, payload.token, payload.student)
+async def scan(payload: ScanRequest, db: AsyncSession = Depends(get_session)):
+    valid, message = await validate_scan(payload.token, payload.student, payload.session, db)
     return {"valid": valid, "message": message}
 
 @app.get("/current")
