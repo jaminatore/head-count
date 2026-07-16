@@ -9,35 +9,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from app.tokens import set_current_token, get_current_token, RELOAD_TIME
 from app.scans import validate_scan
 from app.db import init_db, get_session
+
+from app.tokens import (
+    set_current_token, get_current_token,
+    mark_session_active, mark_session_inactive, get_active_sessions,
+    RELOAD_TIME,
+)
 
 load_dotenv()
 
 from contextlib import asynccontextmanager
+from app.models import Session as SessionModel
+from app.models import utcnow # cause I'm lazy and don't want to redefine it rn
 
 INSTANCE_ID = os.environ.get("HOSTNAME", "local")
 SESSION_TIME = 30
-
-# Probably want to remove this dict if it's the only state - we can change this to a global var later on
-STATE = {"ends_at": None}
 
 class ScanRequest(BaseModel):
     token: str
     student: str
     session: str
 
-
 async def rotate_tokens():
     while True:
-        token = secrets.token_urlsafe(16)
-        set_current_token(token)
+        for session_id in get_active_sessions():
+            set_current_token(session_id, secrets.token_urlsafe(16))
         await asyncio.sleep(RELOAD_TIME)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    await init_db() # With migrate now in compose.yml, this (should) do nothing important. But it's an extra check for safety
     task = asyncio.create_task(rotate_tokens())
     yield
     task.cancel()
@@ -48,9 +51,16 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 @app.post("/session/start")
-def start_session():
-    STATE["ends_at"] = time.time() + SESSION_TIME
-    return {"ends_at": STATE["ends_at"]}
+async def start_session(course_id: str, db: DBSession = Depends(get_session)):
+    session = SessionModel(course_id=course_id)
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+
+    session_id = str(session.session_id)
+    mark_session_active(session_id)
+    set_current_token(session_id, secrets.token_urlsafe(16))
+    return {"session_id": session_id}
 
 @app.post("/scan")
 async def scan(payload: ScanRequest, db: AsyncSession = Depends(get_session)):
@@ -58,12 +68,14 @@ async def scan(payload: ScanRequest, db: AsyncSession = Depends(get_session)):
     return {"valid": valid, "message": message}
 
 @app.get("/current")
-def current():
-    ends_at = STATE["ends_at"]
-    token = get_current_token()
-    if ends_at is None or time.time() > ends_at or token is None:
+def current(session_id: str):
+    active_ids = {str(s) for s in get_active_sessions()}
+    if session_id not in active_ids:
         return {"active": False}
-    return {"active": True, "token": token, "qr": make_qr_data_url(token)}
+    token = get_current_token(session_id)
+    if token is None:
+        return {"active": False}
+    return {"active": True, "token": token, "qr": make_qr_data_url(f"{session_id}:{token}")}
 
 @app.get("/healthz")
 def healthz():
@@ -82,3 +94,13 @@ def make_qr_data_url(data: str) -> str:
 
     b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
     return f"data:image/png;base64,{b64}"
+
+@app.post("/session/end")
+async def end_session(session_id: str, db: DBSession = Depends(get_session)):
+    result = await db.get(SessionModel, session_id)
+    if result:
+        result.status = "ended"
+        result.ends_at = utcnow()
+        await db.commit()
+    mark_session_inactive(session_id)
+    return {"status": "ended"}
