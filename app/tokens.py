@@ -1,26 +1,41 @@
 import redis
 import os
 
-#  Redis client + key 
 host = os.environ.get("REDIS_HOST", "localhost")
 redis_client = redis.Redis(host=host, port=6379, decode_responses=True)
-TOKEN_KEY = "live_token"
+
 RELOAD_TIME = 5
+ACTIVE_SESSIONS_KEY = "active_sessions"
 
-def set_current_token(token):
-    redis_client.set(TOKEN_KEY, token)
+def token_key(session_id):
+    return f"session:{session_id}:live_token"
 
-def get_current_token():
-    return redis_client.get(TOKEN_KEY)
+def present_key(session_id):
+    return f"session:{session_id}:present"
 
-def validate_scan(token, student, session):
-    live_token = get_current_token()
+def set_current_token(session_id, token):
+    redis_client.set(token_key(session_id), token, ex=RELOAD_TIME + 2)
+
+def get_current_token(session_id):
+    return redis_client.get(token_key(session_id))
+
+def mark_session_active(session_id):
+    redis_client.sadd(ACTIVE_SESSIONS_KEY, session_id)
+
+def mark_session_inactive(session_id):
+    redis_client.srem(ACTIVE_SESSIONS_KEY, session_id)
+    redis_client.delete(token_key(session_id), present_key(session_id))
+
+def get_active_sessions():
+    return redis_client.smembers(ACTIVE_SESSIONS_KEY)
+
+def validate_scan(session_id, token, student):
+    live_token = get_current_token(session_id)
     if live_token is None or token != live_token:
         return False, "Invalid token"
-    record = f"scan:{session}:{token}:{student}"
-    # if the token rotates and expires, the student will be able to scan again and create duplicate attendance records
-    claimed = redis_client.set(record, "1", nx=True, ex=RELOAD_TIME)
-    if not claimed:
+    # return 0 by SADD if the student already exists
+    added = redis_client.sadd(present_key(session_id), student)
+    if not added:
         return False, "Already scanned"
-    # TODO: persist attendance to Postgres / DB
+    # TODO: persist attendance to Postgres
     return True, "Scan successful"
