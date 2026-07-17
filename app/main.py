@@ -1,4 +1,5 @@
 import os, qrcode, base64, io, asyncio, secrets, time
+import uuid
 
 from fastapi import FastAPI, Request, Depends
 from fastapi.responses import HTMLResponse
@@ -50,18 +51,6 @@ app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
-@app.post("/session/start")
-async def start_session(course_id: str, db: DBSession = Depends(get_session)):
-    session = SessionModel(course_id=course_id)
-    db.add(session)
-    await db.commit()
-    await db.refresh(session)
-
-    session_id = str(session.session_id)
-    mark_session_active(session_id)
-    set_current_token(session_id, secrets.token_urlsafe(16))
-    return {"session_id": session_id}
-
 @app.post("/scan")
 async def scan(payload: ScanRequest, db: AsyncSession = Depends(get_session)):
     valid, message = await validate_scan(payload.token, payload.student, payload.session, db)
@@ -95,9 +84,25 @@ def make_qr_data_url(data: str) -> str:
     b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
     return f"data:image/png;base64,{b64}"
 
+@app.post("/session/start")
+async def start_session(course_id: str, db: AsyncSession = Depends(get_session)):
+    session = SessionModel(course_id=course_id)
+    db.add(session)
+    await db.commit()
+    await db.refresh(session)
+
+    session_id = str(session.session_id)
+    mark_session_active(session_id)
+    set_current_token(session_id, secrets.token_urlsafe(16))
+    return {"session_id": session_id}
+
 @app.post("/session/end")
-async def end_session(session_id: str, db: DBSession = Depends(get_session)):
-    result = await db.get(SessionModel, session_id)
+async def end_session(session_id: str, db: AsyncSession = Depends(get_session)):
+    try:
+        session_uuid = uuid.UUID(session_id)
+    except ValueError:
+        return {"status": "error", "message": "Invalid session id"}
+    result = await db.get(SessionModel, session_uuid)
     if result:
         result.status = "ended"
         result.ends_at = utcnow()
