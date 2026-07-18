@@ -13,11 +13,7 @@ from dotenv import load_dotenv
 from app.scans import validate_scan
 from app.db import init_db, get_session
 
-from app.tokens import (
-    set_current_token, get_current_token,
-    mark_session_active, mark_session_inactive, get_active_sessions,
-    RELOAD_TIME,
-)
+import app.tokens as token_store
 
 load_dotenv()
 
@@ -35,9 +31,10 @@ class ScanRequest(BaseModel):
 
 async def rotate_tokens():
     while True:
-        for session_id in get_active_sessions():
-            set_current_token(session_id, secrets.token_urlsafe(16))
-        await asyncio.sleep(RELOAD_TIME)
+        if token_store.try_acquire_leader(INSTANCE_ID):
+            for session_id in token_store.get_active_sessions():
+                token_store.set_current_token(session_id, secrets.token_urlsafe(16))
+        await asyncio.sleep(token_store.RELOAD_TIME)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -58,10 +55,10 @@ async def scan(payload: ScanRequest, db: AsyncSession = Depends(get_session)):
 
 @app.get("/current")
 def current(session_id: str):
-    active_ids = {str(s) for s in get_active_sessions()}
+    active_ids = {str(s) for s in token_store.get_active_sessions()}
     if session_id not in active_ids:
         return {"active": False}
-    token = get_current_token(session_id)
+    token = token_store.get_current_token(session_id)
     if token is None:
         return {"active": False}
     return {"active": True, "token": token, "qr": make_qr_data_url(f"{session_id}:{token}")}
@@ -92,8 +89,8 @@ async def start_session(course_id: str, db: AsyncSession = Depends(get_session))
     await db.refresh(session)
 
     session_id = str(session.session_id)
-    mark_session_active(session_id)
-    set_current_token(session_id, secrets.token_urlsafe(16))
+    token_store.mark_session_active(session_id)
+    token_store.set_current_token(session_id, secrets.token_urlsafe(16))
     return {"session_id": session_id}
 
 @app.post("/session/end")
@@ -107,5 +104,5 @@ async def end_session(session_id: str, db: AsyncSession = Depends(get_session)):
         result.status = "ended"
         result.ends_at = utcnow()
         await db.commit()
-    mark_session_inactive(session_id)
+    token_store.mark_session_inactive(session_id)
     return {"status": "ended"}
