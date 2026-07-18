@@ -2,7 +2,10 @@ import json
 from pathlib import Path
 
 import pytest
+import pytest_asyncio
 import requests
+
+from app.db import engine
 
 BASE_URL = "http://localhost:1234"
 SEED_DATA_PATH = Path(__file__).parent.parent / "seed_data.json"
@@ -20,6 +23,13 @@ def ensure_stack_running():
             f"Could not reach {BASE_URL}/healthz — is `docker compose up` running?\n({e})",
             returncode=1,
         )
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _dispose_shared_engine_after_test():
+    """Ensure that every thread is destroyed after a test -- otherwise will mess with future tests"""
+    yield
+    await engine.dispose()
 
 
 @pytest.fixture(scope="session")

@@ -1,8 +1,8 @@
 {
-  "professor_id": "d0ca2d03-9f30-46fd-a26b-27a13f6bf7b9",
-  "student_a_id": "dacf5c1c-2d21-4b05-85b8-aeaff3f2ad6e",
-  "student_b_id": "c01d0425-2148-46fa-8a6c-28be7087d163",
-  "student_c_id": "69f3993f-ea15-4bc5-8da0-815daea34576",
-  "bio_course_id": "7ffae83c-be4d-4f64-a228-b30afbfb2491",
-  "cs_course_id": "025d1cf5-4357-4ea8-b9b5-893e39926c4d"
+  "professor_id": "e629c624-12bd-4731-a7c8-b1d45d40a023",
+  "student_a_id": "ad97411d-ede9-48e7-9cd1-a145457f2162",
+  "student_b_id": "8efdd416-1f17-44ad-ad99-07fcbc71540a",
+  "student_c_id": "4bc314ff-fa98-437e-96c9-8890451b4d7b",
+  "bio_course_id": "5577eaf6-4d18-47ba-bef0-3669b3f11160",
+  "cs_course_id": "d17f957f-e049-48cb-8fc4-a11c4526beb6"
 }

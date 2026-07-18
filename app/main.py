@@ -19,7 +19,7 @@ load_dotenv()
 
 from contextlib import asynccontextmanager
 from app.models import Session as SessionModel
-from app.models import utcnow # cause I'm lazy and don't want to redefine it rn
+from app.models import utcnow # cause I'm lazy and don't want to redefine it 
 
 INSTANCE_ID = os.environ.get("HOSTNAME", "local")
 SESSION_TIME = 30

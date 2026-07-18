@@ -1,6 +1,3 @@
-# Created by Claude
-# Runs multiple threads to test all instances at once instead of one at a time - this is why we use ThreadPoolExecutor
-
 import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -9,11 +6,12 @@ import requests
 import pytest
 from sqlalchemy import delete
 
-from app.db import async_session
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from app.db import DATABASE_URL
 from app.models import User, Attendance
 
 BASE_URL = "http://localhost:1234"
-RUSH_SIZE = 30  # number of distinct students in the throughput test
+RUSH_SIZE = 30  # number of distinct students in the throughput test -- change accordingly!
 
 
 def start_session_and_get_token(course_id):
@@ -34,24 +32,36 @@ def scan(token, student, session_id):
 
 
 async def _create_load_students(n):
-    async with async_session() as session:
-        users = [
-            User(username=f"loadtest_{i}", email=f"loadtest_{i}@example.com", password_hash="x")
-            for i in range(n)
-        ]
-        session.add_all(users)
-        await session.commit()
-        for u in users:
-            await session.refresh(u)
-        return [str(u.user_id) for u in users]
+    # A dedicated, short-lived engine -- created just for this call to imitate students
+    # Note: IF IT PERSISTS PAST THIS FUNCTION IT WILL MESS WITH THE TESTS!
+    engine = create_async_engine(DATABASE_URL)
+    try:
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+        async with async_session() as session:
+            users = [
+                User(username=f"loadtest_{i}", email=f"loadtest_{i}@example.com", password_hash="x")
+                for i in range(n)
+            ]
+            session.add_all(users)
+            await session.commit()
+            for u in users:
+                await session.refresh(u)
+            return [str(u.user_id) for u in users]
+    finally:
+        await engine.dispose()
 
 
 async def _cleanup_load_students():
-    async with async_session() as session:
-        # attendance rows reference these users via FK — delete children first
-        await session.execute(delete(Attendance).where(Attendance.username.like("loadtest_%")))
-        await session.execute(delete(User).where(User.username.like("loadtest_%")))
-        await session.commit()
+    engine = create_async_engine(DATABASE_URL)
+    try:
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+        async with async_session() as session:
+            # attendance rows reference these users via FK — delete children first
+            await session.execute(delete(Attendance).where(Attendance.username.like("loadtest_%")))
+            await session.execute(delete(User).where(User.username.like("loadtest_%")))
+            await session.commit()
+    finally:
+        await engine.dispose()
 
 
 @pytest.fixture(scope="module")
@@ -62,7 +72,7 @@ def load_students():
 
 
 def test_concurrent_duplicate_scans_exactly_one_accepted(seed_data):
-    """The core anti-spoofing guarantee: N threads racing the identical
+    """The core anti-spoofing: N threads racing the identical
     scan simultaneously must produce exactly one acceptance, no matter
     how the timing lands."""
     session_id, token = start_session_and_get_token(seed_data["bio_course_id"])

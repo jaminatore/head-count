@@ -16,4 +16,4 @@ echo "Running tests..."
 pytest tests/ -v
 
 echo "Tearing down..."
-docker compose down
+docker compose down -v
