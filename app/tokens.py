@@ -3,6 +3,21 @@ from app.redis_client import redis_client
 RELOAD_TIME = 5
 ACTIVE_SESSIONS_KEY = "active_sessions"
 
+LOCK_KEY = "mutator_lock"
+LOCK_TTL_MS = (RELOAD_TIME + 2) * 1000
+ACQUIRE_LUA = """
+local cur = redis.call('GET', KEYS[1])
+if cur == false or cur == ARGV[1] then
+    redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+    return 1
+end
+return 0
+"""
+_acquire_script = redis_client.register_script(ACQUIRE_LUA)
+
+def try_acquire_leader(instance_id):
+    return _acquire_script(keys=[LOCK_KEY], args=[instance_id, LOCK_TTL_MS])
+
 def token_key(session_id):
     return f"session:{session_id}:live_token"
 
