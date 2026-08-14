@@ -10,6 +10,18 @@ from app.db import engine
 BASE_URL = "http://localhost:1234"
 SEED_DATA_PATH = Path(__file__).parent.parent / "seed_data.json"
 
+@pytest.fixture
+def live_session(seed_data):
+    """Start a fresh session per test and return (session_id, token), so
+    tests never collide with each other or with leftover state."""
+    r = requests.post(f"{BASE_URL}/session/start", params={"course_id": seed_data["bio_course_id"]})
+    assert r.status_code == 200, f"Failed to start session: {r.text}"
+    session_id = r.json()["session_id"]
+
+    data = requests.get(f"{BASE_URL}/current", params={"session_id": session_id}).json()
+    assert data.get("active"), f"No active session: {data}"
+
+    return session_id, data["token"]
 
 @pytest.fixture(scope="session", autouse=True)
 def ensure_stack_running():

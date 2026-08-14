@@ -26,20 +26,6 @@ def wait_for_rotation(session_id, previous_token, timeout=30):
     raise TimeoutError("Token did not rotate within timeout")
 
 
-@pytest.fixture
-def live_session(seed_data):
-    """Start a fresh session per test and return (session_id, token), so
-    tests never collide with each other or with leftover state."""
-    r = requests.post(f"{BASE}/session/start", params={"course_id": seed_data["bio_course_id"]})
-    assert r.status_code == 200, f"Failed to start session: {r.text}"
-    session_id = r.json()["session_id"]
-
-    data = requests.get(f"{BASE}/current", params={"session_id": session_id}).json()
-    assert data.get("active"), f"No active session: {data}"
-
-    return session_id, data["token"]
-
-
 def test_valid_scan_accepted(live_session, seed_data):
     session_id, token = live_session
     result = scan(token, seed_data["student_a_id"], session_id)

@@ -4,11 +4,11 @@ from concurrent.futures import ThreadPoolExecutor
 
 import requests
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import select, delete
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from app.db import DATABASE_URL
-from app.models import User, Attendance
+from app.models import User, Attendance, AuditLog
 
 BASE_URL = "http://localhost:1234"
 RUSH_SIZE = 30  # number of distinct students in the throughput test -- change accordingly!
@@ -57,8 +57,10 @@ async def _cleanup_load_students():
         async_session = async_sessionmaker(engine, expire_on_commit=False)
         async with async_session() as session:
             # attendance rows reference these users via FK — delete children first
-            await session.execute(delete(Attendance).where(Attendance.username.like("loadtest_%")))
-            await session.execute(delete(User).where(User.username.like("loadtest_%")))
+            loadtest_user_ids = select(User.user_id).where(User.username.like("loadtest_%"))
+            await session.execute(delete(AuditLog).where(AuditLog.user_id.in_(loadtest_user_ids)))
+            await session.execute(delete(Attendance).where(Attendance.user_id.in_(loadtest_user_ids)))
+            await session.execute(delete(User).where(User.user_id.in_(loadtest_user_ids)))
             await session.commit()
     finally:
         await engine.dispose()
