@@ -31,9 +31,11 @@ class ScanRequest(BaseModel):
 
 async def rotate_tokens():
     while True:
-        now = time.time() 
-        for session_id in token_store.get_due_sessions(now):
-            reload_time = token_store.get_reload_time(session_id)
+        now = time.time()
+        due_sessions = token_store.get_due_sessions(now)        
+        reload_times = token_store.get_reload_times(due_sessions)
+        for session_id in due_sessions:
+            reload_time = reload_times[session_id]
             if token_store.try_acquire_session_lock(session_id, INSTANCE_ID, reload_time):
                 token_store.set_current_token(session_id, secrets.token_urlsafe(16), reload_time)
                 token_store.set_next_due(session_id, now + reload_time)

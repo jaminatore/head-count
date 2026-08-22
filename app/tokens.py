@@ -21,7 +21,6 @@ def set_current_token(session_id, token, reload_time_s=None):
 def get_current_token(session_id):
     return redis_client.get(token_key(session_id))
 
-
 # --- Active session membership + due-time scheduling ------------------------
 
 def mark_session_active(session_id, next_due):
@@ -29,7 +28,8 @@ def mark_session_active(session_id, next_due):
 
 def mark_session_inactive(session_id):
     redis_client.zrem(ACTIVE_SESSIONS_KEY, session_id)
-    redis_client.delete(token_key(session_id), present_key(session_id), reload_time_key(session_id))
+    redis_client.delete(token_key(session_id), present_key(session_id))
+    redis_client.hdel(SESSION_RELOAD_TIMES_KEY, session_id)
 
 def get_active_sessions():
     return redis_client.zrange(ACTIVE_SESSIONS_KEY, 0, -1)
@@ -46,16 +46,25 @@ def set_next_due(session_id, when):
 
 # --- Per-session reload time (cached from Postgres) -------------------------
 
-def reload_time_key(session_id):
-    return f"session:{session_id}:reload_time"
+SESSION_RELOAD_TIMES_KEY = "session_reload_times"
 
 def set_reload_time(session_id, reload_time_s):
-    redis_client.set(reload_time_key(session_id), reload_time_s)
+    redis_client.hset(SESSION_RELOAD_TIMES_KEY, session_id, reload_time_s)
 
 def get_reload_time(session_id):
-    val = redis_client.get(reload_time_key(session_id))
+    val = redis_client.hget(SESSION_RELOAD_TIMES_KEY, session_id)
     return int(val) if val is not None else RELOAD_TIME
 
+def get_reload_times(session_ids):
+    """Batch lookup for less redis calls """
+    session_ids = list(session_ids)
+    if not session_ids:
+        return {}
+    values = redis_client.hmget(SESSION_RELOAD_TIMES_KEY, session_ids)
+    return {
+        sid: (int(v) if v is not None else RELOAD_TIME)
+        for sid, v in zip(session_ids, values)
+    }
 
 # --- Per-session rotation lock ----------------------------------------------
 

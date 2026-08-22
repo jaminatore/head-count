@@ -52,3 +52,58 @@ def test_fast_session_rotates_more_than_slow_session(seed_data):
     assert len(fast_seen) >= 3, f"fast session should have rotated several times, saw: {fast_seen}"
     assert len(slow_seen) <= 2, f"slow session rotated too often, saw: {slow_seen}"
     assert len(fast_seen) > len(slow_seen), "fast session should rotate strictly more than slow session"
+
+
+def test_many_concurrent_sessions_all_rotate_independently(seed_data):
+    """Stress test: create a plethora of sessions at once and confirm every
+    single one keeps rotating on schedule. Proves the loop doesn't starve
+    some sessions while servicing others, and that isolation still holds
+    once there are many active sessions in play at once, not just two."""
+    N = 25 # arbitrary number of workers - change as needed
+    reload_time = 2
+    course_id = seed_data["bio_course_id"]
+
+    def start_one(_):
+        r = requests.post(f"{BASE_URL}/session/start", params={
+            "course_id": course_id, "reload_time": reload_time,
+        })
+        assert r.status_code == 200
+        return r.json()["session_id"]
+
+    with ThreadPoolExecutor(max_workers=N) as pool:
+        session_ids = list(pool.map(start_one, range(N)))
+
+    assert len(set(session_ids)) == N, "expected N distinct session ids"
+
+    def get_token(session_id):
+        data = requests.get(f"{BASE_URL}/current", params={"session_id": session_id}).json()
+        assert data["active"], f"session {session_id} not active: {data}"
+        return data["token"]
+
+    with ThreadPoolExecutor(max_workers=N) as pool:
+        first_tokens = dict(zip(session_ids, pool.map(get_token, session_ids)))
+
+    time.sleep(reload_time + 1)  # let at least one more rotation happen for everyone
+
+    with ThreadPoolExecutor(max_workers=N) as pool:
+        second_tokens = dict(zip(session_ids, pool.map(get_token, session_ids)))
+
+    not_rotated = [sid for sid in session_ids if first_tokens[sid] == second_tokens[sid]]
+    assert not not_rotated, f"{len(not_rotated)}/{N} sessions failed to rotate: {not_rotated}"
+
+    # Isolation spot-check at scale: one session's current token must not
+    # validate under a completely different session, even with N others
+    # simultaneously active.
+    a, b = session_ids[0], session_ids[1]
+    result = requests.post(f"{BASE_URL}/scan", json={
+        "token": second_tokens[a],
+        "student": seed_data["student_a_id"],
+        "session": b,
+    }).json()
+    assert result["valid"] is False
+
+    with ThreadPoolExecutor(max_workers=N) as pool:
+        list(pool.map(
+            lambda sid: requests.post(f"{BASE_URL}/session/end", params={"session_id": sid}),
+            session_ids,
+        ))
