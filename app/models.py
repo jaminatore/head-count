@@ -57,6 +57,7 @@ class Session(SQLModel, table=True):
     session_id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     course_id: uuid.UUID = Field(foreign_key="courses.course_id", index=True)
     status: str = "active" # options: active | ended
+    reload_time: int = Field(default=5)
     started_at: datetime = Field(default_factory=utcnow, sa_column=Column(DateTime(timezone=True)))
     ends_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True)))
     
