@@ -1,68 +1,68 @@
 import requests
 import time
-import uuid
 import pytest
 
-
-
 BASE = "http://localhost:1234"
-SEED_USER = "a119f041-e589-433e-b759-4d77c59582c1"
-SEED_SESSION = "ddc5f191-97f7-44c7-958e-cbb60e57501f"
 
-requests.post(f"{BASE}/session/start")
-
-@pytest.fixture
-def session_id():
-    """A unique session id per test, so tests don't collide in Redis."""
-    return f"test-{uuid.uuid4()}"
-
-@pytest.fixture
-def live_token():
-    """Start a session and return the currently-live token."""
-    requests.post(f"{BASE}/session/start")
-    data = requests.get(f"{BASE}/current").json()
-    assert data.get("active"), f"No active session: {data}"
-    return data["token"]
 
 def scan(token, student, session):
     return requests.post(f"{BASE}/scan", json={
         "token": token,
         "student": student,
-        "session": session
+        "session": session,
     }).json()
 
-def wait_for_rotation(previous_token, timeout=30):
-    """Poll /current until the token changes; return the old (stale) token."""
+
+def wait_for_rotation(session_id, previous_token, timeout=30):
+    """Poll /current until this session's token changes; return the old
+    (now stale) token."""
     deadline = time.time() + timeout
     while time.time() < deadline:
-        data = requests.get(f"{BASE}/current").json()
+        data = requests.get(f"{BASE}/current", params={"session_id": session_id}).json()
         current = data.get("token")
         if current is not None and current != previous_token:
-            return previous_token          # the old token, now stale
-        time.sleep(0.2)                    # small poll interval, don't hammer
+            return previous_token
+        time.sleep(0.2)
     raise TimeoutError("Token did not rotate within timeout")
 
-def test_valid_scan_accepted(live_token, session_id):
-    """A valid scan should be accepted."""
-    result = scan(live_token, SEED_USER, SEED_SESSION)
+
+@pytest.fixture
+def live_session(seed_data):
+    """Start a fresh session per test and return (session_id, token), so
+    tests never collide with each other or with leftover state."""
+    r = requests.post(f"{BASE}/session/start", params={"course_id": seed_data["bio_course_id"]})
+    assert r.status_code == 200, f"Failed to start session: {r.text}"
+    session_id = r.json()["session_id"]
+
+    data = requests.get(f"{BASE}/current", params={"session_id": session_id}).json()
+    assert data.get("active"), f"No active session: {data}"
+
+    return session_id, data["token"]
+
+
+def test_valid_scan_accepted(live_session, seed_data):
+    session_id, token = live_session
+    result = scan(token, seed_data["student_a_id"], session_id)
     assert result["valid"], f"Scan failed: {result}"
 
-def test_duplicate_scan_rejected(live_token, session_id):
-    """A duplicate scan should be rejected."""
-    result1 = scan(live_token, SEED_USER, SEED_SESSION)
+
+def test_duplicate_scan_rejected(live_session, seed_data):
+    session_id, token = live_session
+    result1 = scan(token, seed_data["student_a_id"], session_id)
     assert result1["valid"], f"Scan failed: {result1}"
 
-    result2 = scan(live_token, SEED_USER, SEED_SESSION)
+    result2 = scan(token, seed_data["student_a_id"], session_id)
     assert not result2["valid"], f"Duplicate scan accepted: {result2}"
 
-def test_fake_token_rejected(session_id):
-    """A scan with a fake token should be rejected."""
-    result = scan("fake-token", SEED_USER, SEED_SESSION)
+
+def test_fake_token_rejected(live_session, seed_data):
+    session_id, _ = live_session
+    result = scan("fake-token", seed_data["student_a_id"], session_id)
     assert not result["valid"], f"Fake token accepted: {result}"
 
-def test_stale_token_rejected(live_token, session_id):
-    """A scan with a stale token should be rejected."""
-    stale = wait_for_rotation(live_token)
-    result = scan(stale, SEED_USER, SEED_SESSION)
-    assert not result["valid"], f"Stale token accepted: {result}"
 
+def test_stale_token_rejected(live_session, seed_data):
+    session_id, token = live_session
+    stale = wait_for_rotation(session_id, token)
+    result = scan(stale, seed_data["student_a_id"], session_id)
+    assert not result["valid"], f"Stale token accepted: {result}"
