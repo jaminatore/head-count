@@ -55,7 +55,7 @@ templates = Jinja2Templates(directory="app/templates")
 
 @app.post("/scan")
 async def scan(payload: ScanRequest, db: AsyncSession = Depends(get_session)):
-    valid, message = await validate_scan(payload.token, payload.student, payload.session, db)
+    valid, message = await validate_scan(payload.token, payload.student, payload.session, db, INSTANCE_ID)
     return {"valid": valid, "message": message}
 
 @app.get("/current")

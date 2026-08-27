@@ -5,17 +5,18 @@ from pathlib import Path
 
 from sqlalchemy import delete
 from app.db import async_session, init_db
-from app.models import User, Course, Enrollment
+from app.models import Attendance, AuditLog, Session, User, Course, Enrollment
 
 SEED_DATA_PATH = Path(__file__).parent / "seed_data.json"
 
 
 async def clear_existing(session):
-    """Wipe seed data so this script can be rerun cleanly during dev.
-    Deletes in FK-safe order: children before parents."""
-    await session.execute(delete(Enrollment))
-    await session.execute(delete(Course))
-    await session.execute(delete(User))
+    await session.execute(delete(AuditLog))     # references sessions + users
+    await session.execute(delete(Attendance))   # references sessions + users
+    await session.execute(delete(Enrollment))   # references courses + users
+    await session.execute(delete(Session))       # references courses
+    await session.execute(delete(Course))        # references users
+    await session.execute(delete(User))          # referenced by all above
     await session.commit()
 
 

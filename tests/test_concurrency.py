@@ -4,12 +4,83 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
+import pytest
+from sqlalchemy import select, delete
+
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from app.db import DATABASE_URL
+from app.models import User, Attendance, AuditLog
 
 from app.tokens import try_acquire_session_lock
 
 BASE_URL = "http://localhost:1234"
 
 
+def start_session_and_get_token(course_id):
+    r = requests.post(f"{BASE_URL}/session/start", params={"course_id": course_id})
+    assert r.status_code == 200
+    session_id = r.json()["session_id"]
+    data = requests.get(f"{BASE_URL}/current", params={"session_id": session_id}).json()
+    assert data["active"]
+    return session_id, data["token"]
+
+
+def scan(token, student, session_id):
+    return requests.post(f"{BASE_URL}/scan", json={
+        "token": token,
+        "student": student,
+        "session": session_id,
+    }).json()
+
+
+async def _create_load_students(n):
+    # A dedicated, short-lived engine -- created just for this call to imitate students
+    # Note: IF IT PERSISTS PAST THIS FUNCTION IT WILL MESS WITH THE TESTS!
+    engine = create_async_engine(DATABASE_URL)
+    try:
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+        async with async_session() as session:
+            users = [
+                User(username=f"loadtest_{i}", email=f"loadtest_{i}@example.com", password_hash="x")
+                for i in range(n)
+            ]
+            session.add_all(users)
+            await session.commit()
+            for u in users:
+                await session.refresh(u)
+            return [str(u.user_id) for u in users]
+    finally:
+        await engine.dispose()
+
+
+async def _cleanup_load_students():
+    engine = create_async_engine(DATABASE_URL)
+    try:
+        async_session = async_sessionmaker(engine, expire_on_commit=False)
+        async with async_session() as session:
+            # attendance rows reference these users via FK — delete children first
+            loadtest_user_ids = select(User.user_id).where(User.username.like("loadtest_%"))
+            await session.execute(delete(AuditLog).where(AuditLog.user_id.in_(loadtest_user_ids)))
+            await session.execute(delete(Attendance).where(Attendance.user_id.in_(loadtest_user_ids)))
+            await session.execute(delete(User).where(User.user_id.in_(loadtest_user_ids)))
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+
+@pytest.fixture(scope="module")
+def load_students():
+    ids = asyncio.run(_create_load_students(RUSH_SIZE))
+    yield ids
+    asyncio.run(_cleanup_load_students())
+
+
+def test_concurrent_duplicate_scans_exactly_one_accepted(seed_data):
+    """The core anti-spoofing: N threads racing the identical
+    scan simultaneously must produce exactly one acceptance, no matter
+    how the timing lands."""
+    session_id, token = start_session_and_get_token(seed_data["bio_course_id"])
+    student = seed_data["student_a_id"]
 def test_session_lock_exactly_one_winner():
     """Many 'instances' (fake ids) race to acquire the same session's
     rotation lock at once. Exactly one should win."""
