@@ -6,3 +6,4 @@ redis
 sqlmodel
 asyncpg
 python-dotenv
+prometheus-client>=0.20,<1

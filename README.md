@@ -10,7 +10,7 @@ Built to run as multiple stateless API instances behind a load balancer, sharing
 
 ## Stack
 
-**Python** · **FastAPI** · **Redis** · **PostgreSQL** · **nginx** · **Docker Compose**
+**Python** · **FastAPI** · **Redis** · **PostgreSQL** · **nginx** · **Prometheus** · **Grafana** · **Docker Compose**
 SQLAlchemy (async) · Pydantic · pytest
 
 ---
@@ -54,14 +54,12 @@ Redis holds live tokens and handles scan deduplication. Postgres is the system o
 
 Working end to end: token rotation and validation, exactly-once scan handling, multi-instance deployment behind nginx, async scan persistence to Postgres, and an HTTP test suite covering the valid / duplicate / forged / expired token paths.
 
-Currently replacing the global rotation lock with a per-session one, so each class can run its own rotation interval.
+Each session has its own rotation interval and lock. Prometheus collects live metrics from every API replica, Redis, and Postgres; Grafana includes a provisioned dashboard.
 
 ---
 
 ## Next steps
 
-- **Per-session rotation locks** — lets each session configure its own rotation cadence instead of sharing one global interval
-- **Prometheus + Grafana** — scan rate, rotation timing, rejection reasons
 - **Throughput benchmark** — validated scans/sec across N instances under load
 - **Failure injection** — prove zero stale-token acceptances under concurrency, and clean recovery after a Redis restart
 - **Audit logging** on rejection paths, to back the benchmark numbers with evidence
@@ -76,9 +74,27 @@ Currently replacing the global rotation lock with a per-session one, so each cla
 git clone https://github.com/jaminatore/head-count.git
 cd head-count
 cp .env.example .env.docker
-docker compose up --build
+docker compose --env-file .env.docker up -d --build --scale app=3
 ```
 
-Brings up nginx, multiple API replicas, Postgres, and Redis.
+This starts nginx, three API replicas, Postgres, Redis, their exporters, Prometheus, and Grafana. Open the app at http://localhost:1234, the [Grafana dashboard](http://localhost:3001/d/headcount-live/headcount-live-metrics), and [Prometheus targets](http://localhost:9090/targets). Grafana's local default login is `admin` / `admin`; set `GRAFANA_ADMIN_PASSWORD` in `.env.docker` before starting it if you want a different initial password. Set `GRAFANA_PORT` there to use a different host port.
+
+The Compose migration step also adds the `sessions.reload_time` column with a five-second default when upgrading an older persisted Postgres volume. It leaves existing session rows in place.
+
+Prometheus uses Docker DNS to discover and scrape every `app:8000/metrics` replica independently. It also scrapes the Redis and Postgres exporters. The app's `/metrics` route is reachable within the Compose network, but nginx returns 404 for it on the public app port. Prometheus and Grafana bind to localhost only.
+
+The dashboard shows scan outcomes and rate, active sessions, HTTP latency, token rotation lag and errors, rotator age by replica, and Redis/Postgres health. The active-session gauge reads Redis on each scrape, so its value is the same on every API replica; use `max(headcount_active_sessions)` in PromQL rather than summing it. Other app counters are per replica and should be summed when viewing cluster totals. Metric labels are bounded and contain no student, course, session, or token IDs.
+
+Useful queries in Grafana Explore or Prometheus:
+
+```promql
+sum by (result) (rate(headcount_scans_total[5m]))
+histogram_quantile(0.95, sum by (le) (rate(headcount_rotation_lag_seconds_bucket[5m])))
+time() - headcount_rotator_last_iteration_timestamp_seconds
+```
+
+If Redis is unavailable during a metrics scrape, the app still exposes its process counters, sets `headcount_metrics_redis_query_success` to `0`, and reports `headcount_active_sessions` as `NaN` until the next successful scrape. The rotator retries after failures and records them in `headcount_rotator_errors_total`.
+
+Prometheus and Grafana keep data in named Docker volumes. Run `docker compose --env-file .env.docker down` to stop the stack without deleting that history. `down -v` removes the Postgres, Prometheus, and Grafana volumes.
 
 ---

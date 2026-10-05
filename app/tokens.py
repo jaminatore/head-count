@@ -34,11 +34,14 @@ def mark_session_inactive(session_id):
 def get_active_sessions():
     return redis_client.zrange(ACTIVE_SESSIONS_KEY, 0, -1)
 
+def count_active_sessions():
+    return redis_client.zcard(ACTIVE_SESSIONS_KEY)
+
 def is_session_active(session_id):
     return redis_client.zscore(ACTIVE_SESSIONS_KEY, session_id) is not None
 
 def get_due_sessions(now):
-    return redis_client.zrangebyscore(ACTIVE_SESSIONS_KEY, 0, now)
+    return redis_client.zrangebyscore(ACTIVE_SESSIONS_KEY, 0, now, withscores=True)
 
 def set_next_due(session_id, when):
     redis_client.zadd(ACTIVE_SESSIONS_KEY, {session_id: when})
