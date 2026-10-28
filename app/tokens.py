@@ -87,3 +87,28 @@ def lock_key(session_id):
 def try_acquire_session_lock(session_id, instance_id, reload_time_s):
     ttl_ms = int((reload_time_s + 2) * 1000)
     return _acquire_script(keys=[lock_key(session_id)], args=[instance_id, ttl_ms])
+
+
+# A scan must observe the active flag and current token in the same Redis
+# operation as the short-lived duplicate claim. Postgres remains the durable
+# duplicate guard across token rotations.
+CLAIM_SCAN_LUA = """
+if redis.call('ZSCORE', KEYS[1], ARGV[1]) == false then
+    return 'closed'
+end
+if redis.call('GET', KEYS[2]) ~= ARGV[2] then
+    return 'invalid'
+end
+if redis.call('SET', KEYS[3], '1', 'NX', 'EX', ARGV[3]) == false then
+    return 'duplicate'
+end
+return 'accepted'
+"""
+_claim_scan_script = redis_client.register_script(CLAIM_SCAN_LUA)
+
+
+def claim_scan(session_id, student_id, token, reload_time_s):
+    return _claim_scan_script(
+        keys=[ACTIVE_SESSIONS_KEY, token_key(session_id), f"scan:{session_id}:{student_id}"],
+        args=[session_id, token, reload_time_s + 2],
+    )

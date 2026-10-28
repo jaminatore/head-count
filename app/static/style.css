@@ -29,6 +29,16 @@ body {
 .auth-shell .brand { margin-bottom: 52px; }
 .auth-shell .intro { line-height: 1.6; margin-bottom: 28px; }
 .button-link { display: grid; place-items: center; text-decoration: none; }
+.checkin-panel { text-align: center; }
+.checkin-panel .topline { text-align: left; }
+.checkin-panel .eyebrow { margin-top: 8px; }
+.checkin-panel .brand { margin-bottom: 48px; }
+.checkin-panel .intro { margin-bottom: 0; }
+.checkin-state { display: grid; place-items: center; width: 86px; height: 86px; margin: 34px auto 22px; border-radius: 50%; background: #173c37; color: #83ebc5; font-size: 44px; }
+.checkin-state[data-state="loading"] { background: #183a48; color: #72e2e9; }
+.checkin-state[data-state="error"] { background: #48272f; color: #ffb5bd; }
+.checkin-message { margin: 10px 0 0; color: #a3b4ca; line-height: 1.6; }
+.checkin-panel .field-help { margin: 26px 0 0; }
 
 .brand {
     display: inline-flex;

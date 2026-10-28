@@ -1,5 +1,6 @@
 import os, qrcode, base64, io, asyncio, secrets, time, logging
 import uuid
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.responses import HTMLResponse, Response, RedirectResponse
@@ -106,7 +107,7 @@ async def scan(payload: ScanRequest, db: AsyncSession = Depends(get_session), co
         metrics.SCANS.labels("error").inc()
         raise
     metrics.SCANS.labels(result).inc()
-    return {"valid": valid, "message": message}
+    return {"valid": valid, "message": message, "result": result}
 
 @app.get("/metrics", include_in_schema=False)
 async def prometheus_metrics():
@@ -120,12 +121,15 @@ async def prometheus_metrics():
         metrics.METRICS_REDIS_QUERY_SUCCESS.set(1)
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-async def owned_session(db: AsyncSession, session_id: str, instructor: User) -> SessionModel:
+async def owned_session(db: AsyncSession, session_id: str, instructor: User, lock: bool = False) -> SessionModel:
     try:
         session_uuid = uuid.UUID(session_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Session not found")
-    result = await db.get(SessionModel, session_uuid)
+    if lock:
+        result = (await db.execute(select(SessionModel).where(SessionModel.session_id == session_uuid).with_for_update())).scalar_one_or_none()
+    else:
+        result = await db.get(SessionModel, session_uuid)
     if result is None:
         raise HTTPException(status_code=404, detail="Session not found")
     course = await db.get(Course, result.course_id)
@@ -134,14 +138,16 @@ async def owned_session(db: AsyncSession, session_id: str, instructor: User) -> 
     return result
 
 @app.get("/current")
-async def current(session_id: str, db: AsyncSession = Depends(get_session), context: auth.AuthContext = Depends(auth.require_instructor)):
+async def current(session_id: str, response: Response, db: AsyncSession = Depends(get_session), context: auth.AuthContext = Depends(auth.require_instructor)):
+    response.headers["Cache-Control"] = "no-store"
     await owned_session(db, session_id, context.user)
     if not await run_in_threadpool(token_store.is_session_active, session_id):
         return {"active": False}
     token = await run_in_threadpool(token_store.get_current_token, session_id)
     if token is None:
         return {"active": False}
-    return {"active": True, "token": token, "qr": make_qr_data_url(f"{session_id}:{token}")}
+    checkin_url = f"{auth.PUBLIC_BASE_URL}/check-in#{urlencode({'session': session_id, 'token': token})}"
+    return {"active": True, "token": token, "qr": make_qr_data_url(checkin_url)}
 
 @app.get("/healthz")
 def healthz():
@@ -159,12 +165,21 @@ def home(request: Request, context: auth.AuthContext | None = Depends(auth.optio
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, context: auth.AuthContext | None = Depends(auth.optional_auth)):
     if context is not None:
-        return RedirectResponse("/" if context.user.role == "instructor" else "/account", status_code=303)
+        return RedirectResponse("/" if context.user.role == "instructor" else "/check-in", status_code=303)
     return templates.TemplateResponse(request, "login.html", {"configured": auth.OIDC_CONFIGURED})
 
 @app.get("/account", response_class=HTMLResponse)
 def student_account(request: Request, context: auth.AuthContext = Depends(auth.require_auth)):
-    return templates.TemplateResponse(request, "account.html", {"user": context.user})
+    return RedirectResponse("/check-in", status_code=303)
+
+@app.get("/check-in", response_class=HTMLResponse)
+def checkin_page(request: Request, context: auth.AuthContext | None = Depends(auth.optional_auth)):
+    if context is None:
+        return RedirectResponse("/login", status_code=303)
+    page = templates.TemplateResponse(request, "checkin.html", {"user": context.user})
+    page.headers["Cache-Control"] = "no-store"
+    page.headers["Referrer-Policy"] = "no-referrer"
+    return page
 
 @app.get("/auth/login")
 async def oidc_login(request: Request):
@@ -211,7 +226,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_session
             await db.rollback()
             raise HTTPException(status_code=409, detail="Account provisioning conflict; try signing in again")
 
-    response = RedirectResponse("/" if user.role == "instructor" else "/account", status_code=303)
+    response = RedirectResponse("/" if user.role == "instructor" else "/check-in", status_code=303)
     await auth.create_browser_session(response, user)
     return response
 
@@ -269,7 +284,7 @@ async def start_session(course_id: str, reload_time: int = token_store.RELOAD_TI
 
 @app.post("/session/end")
 async def end_session(session_id: str, db: AsyncSession = Depends(get_session), context: auth.AuthContext = Depends(auth.require_instructor)):
-    result = await owned_session(db, session_id, context.user)
+    result = await owned_session(db, session_id, context.user, lock=True)
     result.status = "ended"
     result.ends_at = utcnow()
     await db.commit()
