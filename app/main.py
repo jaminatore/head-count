@@ -19,14 +19,15 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.scans import validate_scan
 from app.db import init_db, get_session
-from app import metrics, auth
+from app import metrics, auth, records
+from app.access import owned_course, owned_session
 
 import app.tokens as token_store
 
 load_dotenv()
 
 from contextlib import asynccontextmanager
-from app.models import Course, Session as SessionModel, User
+from app.models import Course, Session as SessionModel, User, AuditLog
 from app.models import utcnow # cause I'm lazy and don't want to redefine it
 
 INSTANCE_ID = os.environ.get("HOSTNAME", "local")
@@ -72,6 +73,7 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 app = FastAPI(lifespan=lifespan)
+app.include_router(records.router)
 app.add_middleware(
     SessionMiddleware,
     secret_key=auth.AUTH_SESSION_SECRET or "local-dev-only-oidc-state",
@@ -103,7 +105,22 @@ templates = Jinja2Templates(directory="app/templates")
 async def scan(payload: ScanRequest, db: AsyncSession = Depends(get_session), context: auth.AuthContext = Depends(auth.require_auth)):
     try:
         valid, message, result = await validate_scan(payload.token, str(context.user.user_id), payload.session, db)
+        try:
+            session_uuid = uuid.UUID(payload.session)
+            session_exists = await db.get(SessionModel, session_uuid)
+        except ValueError:
+            session_uuid, session_exists = None, None
+        db.add(AuditLog(
+            session_id=session_uuid if session_exists else None,
+            user_id=context.user.user_id,
+            actor_user_id=context.user.user_id,
+            event_type=result,
+            reason=message,
+            instance_id=INSTANCE_ID,
+        ))
+        await db.commit()
     except Exception:
+        await db.rollback()
         metrics.SCANS.labels("error").inc()
         raise
     metrics.SCANS.labels(result).inc()
@@ -120,22 +137,6 @@ async def prometheus_metrics():
         metrics.ACTIVE_SESSIONS.set(count)
         metrics.METRICS_REDIS_QUERY_SUCCESS.set(1)
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
-
-async def owned_session(db: AsyncSession, session_id: str, instructor: User, lock: bool = False) -> SessionModel:
-    try:
-        session_uuid = uuid.UUID(session_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if lock:
-        result = (await db.execute(select(SessionModel).where(SessionModel.session_id == session_uuid).with_for_update())).scalar_one_or_none()
-    else:
-        result = await db.get(SessionModel, session_uuid)
-    if result is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-    course = await db.get(Course, result.course_id)
-    if course is None or course.user_id != instructor.user_id:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return result
 
 @app.get("/current")
 async def current(session_id: str, response: Response, db: AsyncSession = Depends(get_session), context: auth.AuthContext = Depends(auth.require_instructor)):
@@ -161,6 +162,14 @@ def home(request: Request, context: auth.AuthContext | None = Depends(auth.optio
     if context.user.role != "instructor":
         return RedirectResponse("/account", status_code=303)
     return templates.TemplateResponse(request, "admin.html", {"instance": INSTANCE_ID})
+
+@app.get("/records", response_class=HTMLResponse)
+def records_page(request: Request, context: auth.AuthContext | None = Depends(auth.optional_auth)):
+    if context is None:
+        return RedirectResponse("/login", status_code=303)
+    if context.user.role != "instructor":
+        raise HTTPException(status_code=403, detail="Instructor access required")
+    return templates.TemplateResponse(request, "records.html", {})
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, context: auth.AuthContext | None = Depends(auth.optional_auth)):
@@ -243,10 +252,7 @@ async def logout(request: Request, context: auth.AuthContext = Depends(auth.requ
 @app.get("/courses")
 async def list_courses(db: AsyncSession = Depends(get_session), context: auth.AuthContext = Depends(auth.require_instructor)):
     result = await db.execute(select(Course).where(Course.user_id == context.user.user_id).order_by(Course.code, Course.course_name))
-    return [
-        {"course_id": str(course.course_id), "course_name": course.course_name, "code": course.code}
-        for course in result.scalars()
-    ]
+    return [records.course_json(course) for course in result.scalars()]
 
 def make_qr_data_url(data: str) -> str:
     qr = qrcode.make(data)
@@ -261,15 +267,9 @@ def make_qr_data_url(data: str) -> str:
 async def start_session(course_id: str, reload_time: int = token_store.RELOAD_TIME, db: AsyncSession = Depends(get_session), context: auth.AuthContext = Depends(auth.require_instructor)):
     if reload_time < 1:
         raise HTTPException(status_code=422, detail="reload_time must be at least 1 second")
-    try:
-        course_uuid = uuid.UUID(course_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Course not found")
-    course = await db.get(Course, course_uuid)
-    if course is None or course.user_id != context.user.user_id:
-        raise HTTPException(status_code=404, detail="Course not found")
+    course = await owned_course(db, course_id, context.user)
 
-    session = SessionModel(course_id=course_uuid, reload_time=reload_time)
+    session = SessionModel(course_id=course.course_id, reload_time=reload_time)
     db.add(session)
     await db.commit()
     await db.refresh(session)

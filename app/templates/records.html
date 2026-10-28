@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Records · Headcount</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/records.js" defer></script>
+</head>
+<body>
+    <main class="dashboard">
+        <header class="page-header">
+            <div class="topline"><div class="brand"><span class="brand-mark" aria-hidden="true">H</span> Headcount</div><nav class="header-actions"><a class="text-button" href="/">Live display</a><button id="logout" class="text-button" type="button">Sign out</button></nav></div>
+            <span class="eyebrow">Instructor dashboard</span>
+            <h1>Class records</h1>
+            <p class="intro">Manage your roster, review sessions, and correct attendance.</p>
+        </header>
+
+        <p id="records-notice" class="records-notice" role="status" aria-live="polite"></p>
+        <div class="workspace records-workspace">
+            <section class="panel" aria-labelledby="course-heading">
+                <div class="panel-heading"><span class="step">01</span><div><h2 id="course-heading">Course and roster</h2><p>Students request access with the class code. Approve them here.</p></div></div>
+                <label for="records-course">Course</label>
+                <select id="records-course"><option value="">Loading courses…</option></select>
+                <p id="join-code" class="join-code" hidden></p>
+                <div id="roster-list" class="stack-list"></div>
+
+                <details class="create-course">
+                    <summary>Create a course</summary>
+                    <form id="create-course-form">
+                        <label for="new-course-name">Course name</label>
+                        <input id="new-course-name" required minlength="2" maxlength="120" placeholder="Intro to Biology">
+                        <label for="new-course-code">Course code</label>
+                        <input id="new-course-code" required minlength="2" maxlength="20" placeholder="BIO101">
+                        <button class="button button-primary" type="submit">Create course</button>
+                    </form>
+                </details>
+            </section>
+
+            <section class="panel" aria-labelledby="session-heading">
+                <div class="panel-heading"><span class="step">02</span><div><h2 id="session-heading">Sessions and attendance</h2><p>Select a session to see its live roster and export a record.</p></div></div>
+                <div id="session-list" class="session-list"></div>
+                <div id="attendance-section" hidden>
+                    <div class="attendance-heading"><h3 id="selected-session-title">Attendance</h3><a id="export-link" class="text-button" href="#">Download CSV</a></div>
+                    <p id="attendance-count" class="count-line"></p>
+                    <label for="correction-reason">Reason for manual correction</label>
+                    <input id="correction-reason" maxlength="500" placeholder="e.g. instructor verified student in person">
+                    <div id="attendance-list" class="stack-list"></div>
+                    <h3 class="audit-heading">Recent audit events</h3>
+                    <div id="audit-list" class="stack-list audit-list"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+</body>
+</html>

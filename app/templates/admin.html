@@ -10,7 +10,7 @@
 <body>
     <main class="dashboard">
         <header class="page-header">
-            <div class="topline"><div class="brand"><span class="brand-mark" aria-hidden="true">H</span> Headcount</div><button id="logout" class="text-button" type="button" disabled>Sign out</button></div>
+            <div class="topline"><div class="brand"><span class="brand-mark" aria-hidden="true">H</span> Headcount</div><nav class="header-actions"><a class="text-button" href="/records">Records</a><button id="logout" class="text-button" type="button" disabled>Sign out</button></nav></div>
             <span class="eyebrow">Instructor dashboard</span>
             <h1>Live attendance</h1>
             <p class="intro">Start a session, then display the rotating QR code for your class.</p>
@@ -63,6 +63,7 @@
                     <span class="state-dot" aria-hidden="true"></span>
                     <span id="state-label">Not started</span>
                 </div>
+                <p class="live-count" id="live-count" hidden>0 of 0 students checked in</p>
                 <div class="qr-slot">
                     <div class="qr-placeholder" id="qr-placeholder">
                         <span class="placeholder-icon" aria-hidden="true">▦</span>

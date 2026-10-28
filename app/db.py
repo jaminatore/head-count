@@ -33,6 +33,17 @@ async def migrate_db():
         await conn.execute(text(
             "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_oidc_identity ON users (oidc_issuer, oidc_subject)"
         ))
+        await conn.execute(text("ALTER TABLE courses ADD COLUMN IF NOT EXISTS join_code TEXT"))
+        await conn.execute(text(
+            "UPDATE courses SET join_code = upper(substr(md5(random()::text || course_id::text), 1, 10)) WHERE join_code IS NULL"
+        ))
+        await conn.execute(text("ALTER TABLE courses ALTER COLUMN join_code SET NOT NULL"))
+        await conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_courses_join_code ON courses (join_code)"))
+        await conn.execute(text("ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'approved'"))
+        await conn.execute(text("ALTER TABLE attendances ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ"))
+        await conn.execute(text("ALTER TABLE attendances ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'scan'"))
+        await conn.execute(text("ALTER TABLE \"auditLogs\" ADD COLUMN IF NOT EXISTS actor_user_id UUID REFERENCES users(user_id)"))
+        await conn.execute(text("ALTER TABLE \"auditLogs\" ADD COLUMN IF NOT EXISTS details TEXT"))
 
 async def get_session():
     async with async_session() as session:

@@ -22,6 +22,7 @@ async def validate_scan(token, student, session_id, db):
     enrollment = await db.execute(select(Enrollment).where(
         Enrollment.course_id == session.course_id,
         Enrollment.user_id == student_uuid,
+        Enrollment.status == "approved",
     ))
     if enrollment.scalar_one_or_none() is None:
         return False, "Not enrolled in this course", "not_enrolled"
@@ -52,7 +53,7 @@ async def record_attendance(session_id, student, db):
     )
     try:
         db.add(attendance)
-        await db.commit()
+        await db.flush()
     except IntegrityError:
         await db.rollback()
         return False, "Already scanned", "duplicate"

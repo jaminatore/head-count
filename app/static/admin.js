@@ -16,11 +16,13 @@ const qr = document.getElementById('qr');
 const placeholder = document.getElementById('qr-placeholder');
 const status = document.getElementById('status');
 const logoutButton = document.getElementById('logout');
+const liveCount = document.getElementById('live-count');
 
 let session = null;
 let coursesLoaded = false;
 let busy = false;
 let pollTimer = null;
+let countTimer = null;
 let pollGeneration = 0;
 let csrfToken = null;
 
@@ -49,6 +51,7 @@ function hideQr() {
 function renderSession() {
     const active = session !== null;
     details.hidden = !active;
+    liveCount.hidden = !active;
     courseSelect.disabled = active || busy || !coursesLoaded;
     reloadInput.disabled = active || busy;
     startButton.disabled = active || busy || !coursesLoaded;
@@ -84,7 +87,9 @@ function saveSession() {
 function stopPolling() {
     pollGeneration += 1;
     clearTimeout(pollTimer);
+    clearTimeout(countTimer);
     pollTimer = null;
+    countTimer = null;
 }
 
 function closeSession(message) {
@@ -125,6 +130,21 @@ async function pollCurrent(generation) {
 function startPolling() {
     stopPolling();
     pollCurrent(pollGeneration);
+    pollCount(pollGeneration);
+}
+
+async function pollCount(generation) {
+    if (!session || generation !== pollGeneration) return;
+    try {
+        const data = await api(`/sessions/${encodeURIComponent(session.id)}/attendance`);
+        if (generation === pollGeneration) liveCount.textContent = `${data.present_count} of ${data.roster_count} students checked in`;
+    } catch (_) {
+        if (generation === pollGeneration) liveCount.textContent = 'Live count unavailable';
+    } finally {
+        if (generation === pollGeneration && session) {
+            countTimer = setTimeout(() => pollCount(generation), 5000);
+        }
+    }
 }
 
 async function loadCourses() {

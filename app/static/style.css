@@ -23,6 +23,7 @@ body {
 
 .page-header { margin-bottom: 36px; }
 .topline { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.header-actions { display: flex; align-items: center; gap: 18px; }
 .text-button { border: 0; background: none; color: #a3b4ca; font: inherit; font-size: 13px; cursor: pointer; }
 .text-button:hover { color: #f4f7fb; }
 .auth-shell { width: min(440px, calc(100% - 32px)); margin: min(14vh, 120px) auto 0; }
@@ -39,6 +40,40 @@ body {
 .checkin-state[data-state="error"] { background: #48272f; color: #ffb5bd; }
 .checkin-message { margin: 10px 0 0; color: #a3b4ca; line-height: 1.6; }
 .checkin-panel .field-help { margin: 26px 0 0; }
+.student-courses { margin-top: 34px; padding-top: 28px; border-top: 1px solid #304154; text-align: left; }
+.student-courses h2 { margin-bottom: 8px; }
+.student-courses .checkin-message { margin: 0 0 18px; font-size: 13px; }
+.join-form { gap: 10px; }
+.join-form .button { margin: 8px 0 16px; }
+.student-course { padding: 10px 0; border-top: 1px solid #304154; color: #b6c8d8; font-size: 13px; }
+.records-notice { min-height: 20px; margin: -14px 0 20px; color: #83ebc5; font-size: 14px; }
+.records-notice[data-error="true"] { color: #ffb5bd; }
+.records-workspace { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.join-code { margin: -8px 0 20px; padding: 12px; border: 1px solid #3b796a; border-radius: 8px; background: #153a35; color: #c2f9e4; font-size: 14px; font-weight: 700; }
+.stack-list { display: flex; flex-direction: column; gap: 9px; }
+.list-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 11px; border: 1px solid #304154; border-radius: 9px; background: #0e1723; }
+.list-row-text { display: flex; flex-direction: column; flex: 1 1 160px; gap: 4px; min-width: 0; }
+.list-row-text strong { overflow-wrap: anywhere; font-size: 13px; }
+.list-row-text small { overflow-wrap: anywhere; color: #93a6bd; line-height: 1.4; }
+.row-badge { color: #83ebc5; font-size: 12px; text-transform: capitalize; }
+.mini-button { border: 1px solid #4d8291; border-radius: 7px; padding: 6px 9px; background: transparent; color: #a7e8ef; font: inherit; font-size: 12px; cursor: pointer; }
+.mini-button:hover { background: #183a48; }
+.mini-danger { border-color: #89595e; color: #ffb5bd; }
+.mini-danger:hover { background: #48272f; }
+.empty-message { color: #93a6bd; font-size: 13px; line-height: 1.5; }
+.create-course { margin-top: 25px; padding-top: 20px; border-top: 1px solid #304154; }
+.create-course summary { color: #72e2e9; cursor: pointer; font-size: 14px; font-weight: 700; }
+.create-course form { gap: 8px; margin-top: 18px; }
+.create-course form input { margin-bottom: 12px; }
+.session-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+.session-button { width: 100%; padding: 11px; border: 1px solid #40546b; border-radius: 8px; background: #0e1723; color: #d9e8f3; text-align: left; font: inherit; font-size: 13px; cursor: pointer; }
+.session-button:hover { border-color: #72e2e9; }
+.attendance-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 18px 0 8px; }
+.attendance-heading h3, .audit-heading { margin: 0; font-size: 16px; }
+.count-line { margin-bottom: 20px; color: #83ebc5; font-weight: 700; }
+#correction-reason { margin-bottom: 18px; }
+.audit-heading { margin: 28px 0 15px; }
+.audit-list .list-row { opacity: .85; }
 
 .brand {
     display: inline-flex;
@@ -126,6 +161,7 @@ select:focus-visible, input:focus-visible, button:focus-visible { outline: 2px s
 .qr-placeholder { display: flex; flex-direction: column; align-items: center; gap: 12px; max-width: 180px; color: #8497ad; text-align: center; font-size: 13px; line-height: 1.5; }
 .placeholder-icon { display: grid; place-items: center; width: 64px; height: 64px; border: 1px dashed #4a617a; border-radius: 12px; color: #83cbd7; font-size: 40px; line-height: 1; }
 .status { min-height: 20px; text-align: center; color: #a3b4ca; font-size: 13px; line-height: 1.5; }
+.live-count { margin: 16px 0 0; color: #e4f5f5; font-size: 15px; font-weight: 700; }
 .status[data-error="true"] { color: #ffb5bd; }
 footer { padding: 0 20px 30px; text-align: center; color: #758ba4; font-size: 12px; }
 footer code { color: #9cb4ca; }
@@ -134,5 +170,6 @@ footer code { color: #9cb4ca; }
     .dashboard { width: min(600px, calc(100% - 32px)); padding-top: 26px; }
     .brand { margin-bottom: 34px; }
     .workspace { grid-template-columns: 1fr; }
+    .records-workspace { grid-template-columns: 1fr; }
     .panel { padding: 22px; }
 }

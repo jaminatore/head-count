@@ -18,6 +18,16 @@
         <h2 id="checkin-title">Ready to check in</h2>
         <p id="checkin-message" class="checkin-message" role="status" aria-live="polite">Scan the live QR code displayed in your classroom.</p>
         <p class="field-help">If you just signed in after scanning, scan the current code again—it changes every few seconds.</p>
+        <div class="student-courses">
+            <h2>Join a course</h2>
+            <p class="checkin-message">Enter the class join code from your instructor. They must approve your request before you can check in.</p>
+            <form id="join-form" class="join-form">
+                <label for="student-join-code">Class join code</label>
+                <input id="student-join-code" required minlength="6" maxlength="20" autocomplete="off" placeholder="Class code">
+                <button class="button button-primary" type="submit">Request to join</button>
+            </form>
+            <div id="student-course-list" class="stack-list"></div>
+        </div>
     </main>
 </body>
 </html>
