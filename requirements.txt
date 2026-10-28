@@ -4,6 +4,7 @@ jinja2
 qrcode[pil]
 redis
 sqlmodel
+sqlalchemy[asyncio]
 asyncpg
 python-dotenv
 prometheus-client>=0.20,<1

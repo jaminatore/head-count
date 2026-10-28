@@ -54,7 +54,7 @@ Redis holds live tokens and handles scan deduplication. Postgres is the system o
 
 Working end to end: token rotation and validation, exactly-once scan handling, multi-instance deployment behind nginx, async scan persistence to Postgres, and an HTTP test suite covering the valid / duplicate / forged / expired token paths.
 
-Each session has its own rotation interval and lock. Prometheus collects live metrics from every API replica, Redis, and Postgres; Grafana includes a provisioned dashboard.
+Each session has its own rotation interval and lock. The instructor page lets you choose a course, start a session, display its live QR code, and end the session. Prometheus collects live metrics from every API replica, Redis, and Postgres; Grafana includes a provisioned dashboard.
 
 ---
 
@@ -78,6 +78,8 @@ docker compose --env-file .env.docker up -d --build --scale app=3
 ```
 
 This starts nginx, three API replicas, Postgres, Redis, their exporters, Prometheus, and Grafana. Open the app at http://localhost:1234, the [Grafana dashboard](http://localhost:3001/d/headcount-live/headcount-live-metrics), and [Prometheus targets](http://localhost:9090/targets). Grafana's local default login is `admin` / `admin`; set `GRAFANA_ADMIN_PASSWORD` in `.env.docker` before starting it if you want a different initial password. Set `GRAFANA_PORT` there to use a different host port.
+
+On the app page, select a seeded course, choose the QR rotation interval, and click **Start attendance**. The page refreshes the QR code once a second and restores the active session after a browser reload. Click **End attendance** to close it. If the picker is empty, seed the database with `venv/bin/python seed.py`. The instructor page and `/courses` endpoint are not authenticated yet; do not expose this demo app publicly until access control is added.
 
 The Compose migration step also adds the `sessions.reload_time` column with a five-second default when upgrading an older persisted Postgres volume. It leaves existing session rows in place.
 

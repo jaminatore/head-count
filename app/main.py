@@ -10,6 +10,7 @@ from redis.exceptions import RedisError
 from starlette.concurrency import run_in_threadpool
 
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -22,7 +23,7 @@ import app.tokens as token_store
 load_dotenv()
 
 from contextlib import asynccontextmanager
-from app.models import Session as SessionModel
+from app.models import Course, Session as SessionModel
 from app.models import utcnow # cause I'm lazy and don't want to redefine it
 
 INSTANCE_ID = os.environ.get("HOSTNAME", "local")
@@ -127,7 +128,15 @@ def healthz():
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    return templates.TemplateResponse(request, "admin.html", {"instance": INSTANCE_ID, "qr": ""})
+    return templates.TemplateResponse(request, "admin.html", {"instance": INSTANCE_ID})
+
+@app.get("/courses")
+async def list_courses(db: AsyncSession = Depends(get_session)):
+    result = await db.execute(select(Course).order_by(Course.code, Course.course_name))
+    return [
+        {"course_id": str(course.course_id), "course_name": course.course_name, "code": course.code}
+        for course in result.scalars()
+    ]
 
 def make_qr_data_url(data: str) -> str:
     qr = qrcode.make(data)
