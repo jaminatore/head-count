@@ -2,7 +2,7 @@
 
 **Distributed classroom attendance system using rotating QR codes.**
 
-An admin display shows a QR code embedding a short-lived opaque token that rotates every few seconds. Students mark attendance by scanning the *live* code. Because tokens expire before they can be relayed, screenshot-and-share spoofing doesn't work.
+An instructor display shows a QR code embedding a short-lived opaque token that rotates every few seconds. Students mark attendance by scanning the *live* code. Old screenshots expire quickly, although a copied current code can still be forwarded within its short validity window.
 
 Built to run as multiple stateless API instances behind a load balancer, sharing Redis so any instance can validate any scan.
 
@@ -10,7 +10,7 @@ Built to run as multiple stateless API instances behind a load balancer, sharing
 
 ## Stack
 
-**Python** · **FastAPI** · **Redis** · **PostgreSQL** · **nginx** · **Prometheus** · **Grafana** · **Docker Compose**
+**Python** · **FastAPI** · **Redis** · **PostgreSQL** · **nginx (local) / Caddy (production)** · **Prometheus** · **Grafana** · **Docker Compose**
 SQLAlchemy (async) · Pydantic · pytest
 
 ---
@@ -46,25 +46,24 @@ Redis holds live tokens and handles scan deduplication. Postgres is the system o
 
 **Fail-closed degradation.** If Redis is unreachable, scans are rejected rather than accepted. No attendance record is better than a fraudulent one.
 
-**Black-box testing.** Tests drive the system over HTTP with no imports from the application package, so they exercise the real nginx → app → Redis → Postgres path rather than a mocked stand-in.
+**Testing.** Unit tests cover authentication, scan decisions, and records. A read-only public-edge smoke script checks health and anonymous-access boundaries. The older black-box suite predates SSO and needs migration before it is a release gate.
 
 ---
 
 ## Status
 
-Working end to end: token rotation and validation, exactly-once scan handling, multi-instance deployment behind nginx, async scan persistence to Postgres, and an HTTP test suite covering the valid / duplicate / forged / expired token paths.
+Working locally: token rotation and validation, duplicate scan handling, multi-instance deployment behind nginx, async scan persistence to Postgres, and authenticated instructor/student flows. School OIDC remains configurable but has not been verified against a real issuer.
 
 Each session has its own rotation interval and lock. The instructor page lets you choose a course, start a session, display its live QR code, and end the session. Prometheus collects live metrics from every API replica, Redis, and Postgres; Grafana includes a provisioned dashboard.
 
 ---
 
-## Next steps
+## Before a real classroom
 
-- **Throughput benchmark** — validated scans/sec across N instances under load
-- **Failure injection** — prove zero stale-token acceptances under concurrency, and clean recovery after a Redis restart
-- **Audit logging** on rejection paths, to back the benchmark numbers with evidence
-- **Auth boundary** on the student identifier in scan payloads
-- Migrate the remaining synchronous Redis calls to `redis.asyncio`
+- Configure and verify the school's OIDC issuer/client, domain, DNS, and HTTPS certificate.
+- Configure an alert recipient, off-host encrypted backups, retention policy, and a restore drill.
+- Run the teacher/student phone pilot in the deployment runbook, including a manual fallback.
+- Migrate the legacy black-box tests to school SSO, then run load and failure-injection tests.
 
 ---
 
@@ -90,6 +89,8 @@ The QR opens `<PUBLIC_BASE_URL>/check-in` on a student's phone. The student sign
 Instructors use **Records** from the live display to create courses, share each course's join code, approve student requests, review live and past sessions, download attendance CSVs, and make manual corrections. Students enter a join code on the check-in page; the request stays pending until an instructor approves it. Corrections require a reason, preserve the attendance row by marking it void rather than deleting it, and create an audit event with the actor and before/after state. Scan outcomes also create audit events. Course and attendance APIs are scoped to the owning instructor.
 
 The Compose migration step also adds the `sessions.reload_time` column with a five-second default when upgrading an older persisted Postgres volume. It leaves existing session rows in place.
+
+For a provider-neutral HTTPS deployment, use [the classroom deployment runbook](docs/deployment.md) and `docker-compose.prod.yml`. It is a separate Compose project with private Postgres/Redis, secure-cookie and OIDC startup checks, tracked migrations, readiness checks, a backup script, and Prometheus alert rules. Live school SSO, a public domain/certificate, notification delivery, privacy policy, and a real classroom pilot still require operator configuration and verification.
 
 Prometheus uses Docker DNS to discover and scrape every `app:8000/metrics` replica independently. It also scrapes the Redis and Postgres exporters. The app's `/metrics` route is reachable within the Compose network, but nginx returns 404 for it on the public app port. Prometheus and Grafana bind to localhost only.
 

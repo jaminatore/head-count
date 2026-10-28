@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.scans import validate_scan
-from app.db import init_db, get_session
+from app.db import check_schema, get_session
 from app import metrics, auth, records
 from app.access import owned_course, owned_session
 
@@ -67,7 +67,9 @@ async def rotate_tokens():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db() # With migrate now in compose.yml, this (should) do nothing important. But it's an extra check for safety
+    if os.environ.get("APP_ENV") == "production":
+        auth.validate_production_config()
+    await check_schema()
     task = asyncio.create_task(rotate_tokens())
     yield
     task.cancel()
@@ -81,6 +83,16 @@ app.add_middleware(
     same_site="lax",
     https_only=auth.COOKIE_SECURE,
 )
+
+@app.middleware("http")
+async def browser_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    if request.url.path.startswith(("/auth/", "/check-in", "/records", "/current")):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
 
 @app.middleware("http")
 async def observe_http(request: Request, call_next):
@@ -154,6 +166,17 @@ async def current(session_id: str, response: Response, db: AsyncSession = Depend
 def healthz():
     return {"status": "ok",
             "instance": INSTANCE_ID}
+
+@app.get("/readyz", include_in_schema=False)
+async def readyz():
+    try:
+        await check_schema()
+        if not await run_in_threadpool(token_store.redis_client.ping):
+            raise RuntimeError("Redis ping failed")
+    except Exception:
+        logger.exception("Readiness check failed")
+        raise HTTPException(status_code=503, detail="Dependencies unavailable")
+    return {"status": "ready"}
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request, context: auth.AuthContext | None = Depends(auth.optional_auth)):

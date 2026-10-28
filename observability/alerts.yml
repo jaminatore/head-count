@@ -1,0 +1,33 @@
+groups:
+  - name: headcount-classroom
+    rules:
+      - alert: HeadcountAppUnavailable
+        expr: count(up{job="headcount-app"} == 1) == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: No Headcount API replica is scrapeable
+      - alert: HeadcountRedisUnavailable
+        expr: absent(up{job="redis"}) or up{job="redis"} == 0 or redis_up == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: Redis or its exporter is unavailable
+      - alert: HeadcountPostgresUnavailable
+        expr: absent(up{job="postgres"}) or up{job="postgres"} == 0 or pg_up == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: Postgres or its exporter is unavailable
+      - alert: HeadcountRotationStalled
+        expr: max(time() - headcount_rotator_last_iteration_timestamp_seconds) > 30
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: A token rotator has not iterated for 30 seconds
+      - alert: HeadcountScanErrors
+        expr: sum(increase(headcount_scans_total{result="error"}[5m])) > 0
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: One or more scan requests failed unexpectedly

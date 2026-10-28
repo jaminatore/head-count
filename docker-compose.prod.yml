@@ -1,0 +1,143 @@
+name: headcount-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: ${HEADCOUNT_ENV_FILE:-.env.prod}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [private]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks: [private]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build: .
+    env_file: ${HEADCOUNT_ENV_FILE:-.env.prod}
+    command: ["python", "-c", "import asyncio; from app.db import migrate_db; asyncio.run(migrate_db())"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [private]
+    restart: "no"
+
+  app:
+    build: .
+    env_file: ${HEADCOUNT_ENV_FILE:-.env.prod}
+    environment:
+      APP_ENV: production
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    # Outbound access on edge is required for school OIDC discovery/token exchange.
+    networks: [private, edge]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      HEADCOUNT_DOMAIN: ${HEADCOUNT_DOMAIN:?set HEADCOUNT_DOMAIN in .env.prod}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+        restart: true
+    networks: [private, edge]
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.88.0
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on: [redis]
+    restart: unless-stopped
+    networks: [private]
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    env_file: ${HEADCOUNT_ENV_FILE:-.env.prod}
+    environment:
+      DATA_SOURCE_URI: postgres:5432/${POSTGRES_DB:?set POSTGRES_DB in .env.prod}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.prod}
+      DATA_SOURCE_PASS: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [private]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on: [app, redis-exporter, postgres-exporter]
+    restart: unless-stopped
+    networks: [private]
+
+  grafana:
+    image: grafana/grafana:12.1.0
+    env_file: ${HEADCOUNT_ENV_FILE:-.env.prod}
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env.prod}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on: [prometheus]
+    restart: unless-stopped
+    # Contact-point notifications may need outbound network access.
+    networks: [private, edge]
+
+networks:
+  private:
+    internal: true
+  edge: {}
+
+volumes:
+  postgres_data: {}
+  redis_data: {}
+  prometheus_data: {}
+  grafana_data: {}
+  caddy_data: {}
+  caddy_config: {}

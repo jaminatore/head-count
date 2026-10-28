@@ -6,6 +6,7 @@ import os
 import secrets
 import uuid
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from authlib.integrations.starlette_client import OAuth
 from fastapi import Depends, HTTPException, Request
@@ -27,6 +28,24 @@ SESSION_TTL_SECONDS = 8 * 60 * 60
 COOKIE_NAME = "headcount_session"
 
 OIDC_CONFIGURED = all((OIDC_METADATA_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, AUTH_SESSION_SECRET))
+
+def validate_production_config() -> None:
+    if not OIDC_CONFIGURED or any(
+        value.startswith("REPLACE_WITH_")
+        for value in (OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, AUTH_SESSION_SECRET)
+    ):
+        raise RuntimeError("Production requires configured school OIDC credentials")
+    if urlparse(OIDC_METADATA_URL).scheme != "https":
+        raise RuntimeError("Production requires an HTTPS OIDC metadata URL")
+    public_url = urlparse(PUBLIC_BASE_URL)
+    if public_url.scheme != "https" or not public_url.hostname or public_url.path not in ("", "/") or not COOKIE_SECURE:
+        raise RuntimeError("Production requires an HTTPS public origin and secure cookies")
+    declared_domain = os.environ.get("HEADCOUNT_DOMAIN")
+    if declared_domain and public_url.hostname != declared_domain:
+        raise RuntimeError("PUBLIC_BASE_URL must use HEADCOUNT_DOMAIN")
+    if len(AUTH_SESSION_SECRET) < 32:
+        raise RuntimeError("Production requires an AUTH_SESSION_SECRET of at least 32 characters")
+
 oauth = OAuth()
 if OIDC_CONFIGURED:
     oauth.register(
