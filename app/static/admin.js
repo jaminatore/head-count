@@ -15,12 +15,14 @@ const stateLabel = document.getElementById('state-label');
 const qr = document.getElementById('qr');
 const placeholder = document.getElementById('qr-placeholder');
 const status = document.getElementById('status');
+const logoutButton = document.getElementById('logout');
 
 let session = null;
 let coursesLoaded = false;
 let busy = false;
 let pollTimer = null;
 let pollGeneration = 0;
+let csrfToken = null;
 
 function setStatus(message, error = false) {
     status.textContent = message;
@@ -59,7 +61,9 @@ function renderSession() {
 }
 
 async function api(url, options) {
-    const response = await fetch(url, options);
+    const requestOptions = options ? { ...options, headers: { ...options.headers } } : {};
+    if (requestOptions.method === 'POST') requestOptions.headers['X-CSRF-Token'] = csrfToken;
+    const response = await fetch(url, requestOptions);
     const data = await response.json();
     if (!response.ok || data.status === 'error') {
         const message = typeof data.detail === 'string' ? data.detail : data.message;
@@ -207,4 +211,16 @@ try {
 }
 
 renderSession();
-loadCourses();
+api('/auth/me').then((me) => {
+    csrfToken = me.csrf;
+    logoutButton.disabled = false;
+    loadCourses();
+}).catch((error) => {
+    setStatus(`Could not verify sign-in: ${error.message}`, true);
+});
+
+logoutButton.addEventListener('click', async () => {
+    const response = await fetch('/auth/logout', { method: 'POST', headers: { 'X-CSRF-Token': csrfToken } });
+    if (response.ok) window.location.assign('/login');
+    else setStatus('Could not sign out. Please try again.', true);
+});

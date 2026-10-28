@@ -27,6 +27,12 @@ async def migrate_db():
         await conn.execute(text(
             "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS reload_time INTEGER NOT NULL DEFAULT 5"
         ))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_issuer TEXT"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_subject TEXT"))
+        await conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'student'"))
+        await conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_oidc_identity ON users (oidc_issuer, oidc_subject)"
+        ))
 
 async def get_session():
     async with async_session() as session:

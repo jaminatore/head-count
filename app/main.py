@@ -1,8 +1,8 @@
 import os, qrcode, base64, io, asyncio, secrets, time, logging
 import uuid
 
-from fastapi import FastAPI, Request, Depends
-from fastapi.responses import HTMLResponse, Response
+from fastapi import FastAPI, Request, Depends, HTTPException
+from fastapi.responses import HTMLResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
@@ -11,19 +11,21 @@ from starlette.concurrency import run_in_threadpool
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.scans import validate_scan
 from app.db import init_db, get_session
-from app import metrics
+from app import metrics, auth
 
 import app.tokens as token_store
 
 load_dotenv()
 
 from contextlib import asynccontextmanager
-from app.models import Course, Session as SessionModel
+from app.models import Course, Session as SessionModel, User
 from app.models import utcnow # cause I'm lazy and don't want to redefine it
 
 INSTANCE_ID = os.environ.get("HOSTNAME", "local")
@@ -32,7 +34,6 @@ logger = logging.getLogger(__name__)
 
 class ScanRequest(BaseModel):
     token: str
-    student: str
     session: str
 
 async def rotate_tokens():
@@ -70,6 +71,13 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=auth.AUTH_SESSION_SECRET or "local-dev-only-oidc-state",
+    session_cookie="headcount_oidc_state",
+    same_site="lax",
+    https_only=auth.COOKIE_SECURE,
+)
 
 @app.middleware("http")
 async def observe_http(request: Request, call_next):
@@ -91,9 +99,9 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
 
 @app.post("/scan")
-async def scan(payload: ScanRequest, db: AsyncSession = Depends(get_session)):
+async def scan(payload: ScanRequest, db: AsyncSession = Depends(get_session), context: auth.AuthContext = Depends(auth.require_auth)):
     try:
-        valid, message, result = await validate_scan(payload.token, payload.student, payload.session, db)
+        valid, message, result = await validate_scan(payload.token, str(context.user.user_id), payload.session, db)
     except Exception:
         metrics.SCANS.labels("error").inc()
         raise
@@ -112,11 +120,25 @@ async def prometheus_metrics():
         metrics.METRICS_REDIS_QUERY_SUCCESS.set(1)
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
+async def owned_session(db: AsyncSession, session_id: str, instructor: User) -> SessionModel:
+    try:
+        session_uuid = uuid.UUID(session_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Session not found")
+    result = await db.get(SessionModel, session_uuid)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    course = await db.get(Course, result.course_id)
+    if course is None or course.user_id != instructor.user_id:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return result
+
 @app.get("/current")
-def current(session_id: str):
-    if not token_store.is_session_active(session_id):
+async def current(session_id: str, db: AsyncSession = Depends(get_session), context: auth.AuthContext = Depends(auth.require_instructor)):
+    await owned_session(db, session_id, context.user)
+    if not await run_in_threadpool(token_store.is_session_active, session_id):
         return {"active": False}
-    token = token_store.get_current_token(session_id)
+    token = await run_in_threadpool(token_store.get_current_token, session_id)
     if token is None:
         return {"active": False}
     return {"active": True, "token": token, "qr": make_qr_data_url(f"{session_id}:{token}")}
@@ -127,12 +149,85 @@ def healthz():
             "instance": INSTANCE_ID}
 
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request):
+def home(request: Request, context: auth.AuthContext | None = Depends(auth.optional_auth)):
+    if context is None:
+        return RedirectResponse("/login", status_code=303)
+    if context.user.role != "instructor":
+        return RedirectResponse("/account", status_code=303)
     return templates.TemplateResponse(request, "admin.html", {"instance": INSTANCE_ID})
 
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, context: auth.AuthContext | None = Depends(auth.optional_auth)):
+    if context is not None:
+        return RedirectResponse("/" if context.user.role == "instructor" else "/account", status_code=303)
+    return templates.TemplateResponse(request, "login.html", {"configured": auth.OIDC_CONFIGURED})
+
+@app.get("/account", response_class=HTMLResponse)
+def student_account(request: Request, context: auth.AuthContext = Depends(auth.require_auth)):
+    return templates.TemplateResponse(request, "account.html", {"user": context.user})
+
+@app.get("/auth/login")
+async def oidc_login(request: Request):
+    if not auth.OIDC_CONFIGURED:
+        raise HTTPException(status_code=503, detail="School SSO is not configured")
+    return await auth.oauth.school.authorize_redirect(request, f"{auth.PUBLIC_BASE_URL}/auth/callback")
+
+@app.get("/auth/callback")
+async def oidc_callback(request: Request, db: AsyncSession = Depends(get_session)):
+    if not auth.OIDC_CONFIGURED:
+        raise HTTPException(status_code=503, detail="School SSO is not configured")
+    try:
+        token = await auth.oauth.school.authorize_access_token(request)
+        claims = token["userinfo"]
+        issuer, subject, email = claims["iss"], claims["sub"], claims["email"]
+    except Exception:
+        logger.exception("School SSO callback failed")
+        raise HTTPException(status_code=401, detail="School sign-in failed")
+    if not all(isinstance(value, str) and value for value in (issuer, subject, email)):
+        raise HTTPException(status_code=401, detail="School identity is incomplete")
+    if claims.get("email_verified") is False:
+        raise HTTPException(status_code=403, detail="Verified school email required")
+    request.session.clear()
+
+    result = await db.execute(select(User).where(User.oidc_issuer == issuer, User.oidc_subject == subject))
+    user = result.scalar_one_or_none()
+    if user is None:
+        existing_email = await db.execute(select(User).where(User.email == email))
+        if existing_email.scalar_one_or_none() is not None:
+            raise HTTPException(status_code=409, detail="Ask an administrator to link your school account")
+        user = User(
+            email=email,
+            username=claims.get("name") or claims.get("preferred_username") or email,
+            password_hash="",
+            oidc_issuer=issuer,
+            oidc_subject=subject,
+            role="student",
+        )
+        db.add(user)
+        try:
+            await db.commit()
+            await db.refresh(user)
+        except IntegrityError:
+            await db.rollback()
+            raise HTTPException(status_code=409, detail="Account provisioning conflict; try signing in again")
+
+    response = RedirectResponse("/" if user.role == "instructor" else "/account", status_code=303)
+    await auth.create_browser_session(response, user)
+    return response
+
+@app.get("/auth/me")
+def whoami(context: auth.AuthContext = Depends(auth.require_auth)):
+    return {"user_id": str(context.user.user_id), "email": context.user.email, "role": context.user.role, "csrf": context.csrf}
+
+@app.post("/auth/logout")
+async def logout(request: Request, context: auth.AuthContext = Depends(auth.require_auth)):
+    response = RedirectResponse("/login", status_code=303)
+    await auth.delete_browser_session(request, response)
+    return response
+
 @app.get("/courses")
-async def list_courses(db: AsyncSession = Depends(get_session)):
-    result = await db.execute(select(Course).order_by(Course.code, Course.course_name))
+async def list_courses(db: AsyncSession = Depends(get_session), context: auth.AuthContext = Depends(auth.require_instructor)):
+    result = await db.execute(select(Course).where(Course.user_id == context.user.user_id).order_by(Course.code, Course.course_name))
     return [
         {"course_id": str(course.course_id), "course_name": course.course_name, "code": course.code}
         for course in result.scalars()
@@ -148,11 +243,18 @@ def make_qr_data_url(data: str) -> str:
     return f"data:image/png;base64,{b64}"
 
 @app.post("/session/start")
-async def start_session(course_id: str, reload_time: int = token_store.RELOAD_TIME, db: AsyncSession = Depends(get_session)):
+async def start_session(course_id: str, reload_time: int = token_store.RELOAD_TIME, db: AsyncSession = Depends(get_session), context: auth.AuthContext = Depends(auth.require_instructor)):
     if reload_time < 1:
-        return {"status": "error", "message": "reload_time must be at least 1 second"}
+        raise HTTPException(status_code=422, detail="reload_time must be at least 1 second")
+    try:
+        course_uuid = uuid.UUID(course_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Course not found")
+    course = await db.get(Course, course_uuid)
+    if course is None or course.user_id != context.user.user_id:
+        raise HTTPException(status_code=404, detail="Course not found")
 
-    session = SessionModel(course_id=course_id, reload_time=reload_time)
+    session = SessionModel(course_id=course_uuid, reload_time=reload_time)
     db.add(session)
     await db.commit()
     await db.refresh(session)
@@ -166,16 +268,11 @@ async def start_session(course_id: str, reload_time: int = token_store.RELOAD_TI
     return {"session_id": session_id, "reload_time": reload_time}
 
 @app.post("/session/end")
-async def end_session(session_id: str, db: AsyncSession = Depends(get_session)):
-    try:
-        session_uuid = uuid.UUID(session_id)
-    except ValueError:
-        return {"status": "error", "message": "Invalid session id"}
-    result = await db.get(SessionModel, session_uuid)
-    if result:
-        result.status = "ended"
-        result.ends_at = utcnow()
-        await db.commit()
+async def end_session(session_id: str, db: AsyncSession = Depends(get_session), context: auth.AuthContext = Depends(auth.require_instructor)):
+    result = await owned_session(db, session_id, context.user)
+    result.status = "ended"
+    result.ends_at = utcnow()
+    await db.commit()
     token_store.mark_session_inactive(session_id)
     metrics.SESSION_EVENTS.labels("end").inc()
     return {"status": "ended"}

@@ -8,11 +8,17 @@ def utcnow():
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint("oidc_issuer", "oidc_subject", name="uq_user_oidc_identity"),
+    )
 
     user_id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     email: str = Field(unique=True, index=True)
     username: str
     password_hash: str 
+    oidc_issuer: str | None = None
+    oidc_subject: str | None = None
+    role: str = "student"
     created_at: datetime = Field(default_factory=utcnow, sa_column=Column(DateTime(timezone=True)))
 
     # relationship fields: navigation only, they are NOT columns
