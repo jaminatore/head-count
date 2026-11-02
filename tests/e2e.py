@@ -44,9 +44,9 @@ def scan(client, session_id, token, **extra):
     return checked(client.post("/scan", json={"session": session_id, "token": token, **extra})).json()
 
 
-def scan_current(student, teacher, session_id, **extra):
+def scan_current(student_client, teacher, session_id, **extra):
     for _ in range(4):
-        result = scan(student, session_id, current(teacher, session_id), **extra)
+        result = scan(student_client, session_id, current(teacher, session_id), **extra)
         if result["result"] != "invalid_token":
             return result
     raise AssertionError("Live token rotated between display and scan four times")
