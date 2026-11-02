@@ -1,0 +1,121 @@
+name: headcount-e2e
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql+asyncpg://headcount:headcount@postgres:5432/headcount
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  OIDC_METADATA_URL: http://oidc:9000/.well-known/openid-configuration
+  OIDC_CLIENT_ID: headcount-e2e
+  OIDC_CLIENT_SECRET: e2e-secret-not-for-production
+  AUTH_SESSION_SECRET: e2e-state-signing-secret-not-for-production
+  PUBLIC_BASE_URL: http://nginx
+  COOKIE_SECURE: "false"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: headcount
+      POSTGRES_PASSWORD: headcount
+      POSTGRES_DB: headcount
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U headcount -d headcount"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  redis:
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  migrate:
+    build: .
+    environment: *app-env
+    command: ["python", "-c", "import asyncio; from app.db import migrate_db; asyncio.run(migrate_db())"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  oidc:
+    build: .
+    command: ["uvicorn", "tests.oidc_provider:app", "--host", "0.0.0.0", "--port", "9000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/healthz', timeout=2)"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  seed:
+    build: .
+    environment: *app-env
+    command: ["python", "-m", "tests.e2e_seed"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  app:
+    build: .
+    environment: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      oidc:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  nginx:
+    image: nginx:1.27
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      app:
+        condition: service_healthy
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.88.0
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    environment:
+      DATA_SOURCE_URI: postgres:5432/headcount?sslmode=disable
+      DATA_SOURCE_USER: headcount
+      DATA_SOURCE_PASS: headcount
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+    depends_on: [app, redis-exporter, postgres-exporter]
+
+  e2e:
+    build: .
+    command: ["python", "-m", "tests.e2e"]
+    environment:
+      HEADCOUNT_TEST_BASE_URL: http://nginx
+    depends_on:
+      nginx:
+        condition: service_started
+      seed:
+        condition: service_completed_successfully
+      prometheus:
+        condition: service_started

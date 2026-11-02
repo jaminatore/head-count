@@ -46,7 +46,7 @@ Redis holds live tokens and handles scan deduplication. Postgres is the system o
 
 **Fail-closed degradation.** If Redis is unreachable, scans are rejected rather than accepted. No attendance record is better than a fraudulent one.
 
-**Testing.** Unit tests cover authentication, scan decisions, and records. A read-only public-edge smoke script checks health and anonymous-access boundaries. The older black-box suite predates SSO and needs migration before it is a release gate.
+**Testing.** Unit tests cover authentication, scan decisions, and records. CI also runs a disposable, no-host-port Compose stack with a test OIDC issuer. Its black-box runner signs in as a teacher and student through nginx, then exercises enrollment, token rotation, concurrent scans, records, exports, audit, and metrics over HTTP. No school credentials or production volumes are used.
 
 ---
 
@@ -63,7 +63,7 @@ Each session has its own rotation interval and lock. The instructor page lets yo
 - Configure and verify the school's OIDC issuer/client, domain, DNS, and HTTPS certificate.
 - Configure an alert recipient, off-host encrypted backups, retention policy, and a restore drill.
 - Run the teacher/student phone pilot in the deployment runbook, including a manual fallback.
-- Migrate the legacy black-box tests to school SSO, then run load and failure-injection tests.
+- Verify sign-in against the real school SSO, then run load and failure-injection tests.
 
 ---
 
