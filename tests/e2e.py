@@ -71,6 +71,12 @@ def run():
     checked(anonymous.post("/scan", json={"session": str(uuid.uuid4()), "token": "fake"}), 401)
     print("PASS anonymous boundary and readiness", flush=True)
 
+    outsider = httpx.Client(base_url=BASE, follow_redirects=True, timeout=15)
+    checked(outsider.get(f"{OIDC}/select/outsider"))
+    checked(outsider.get("/auth/login"), 403)
+    checked(outsider.get("/auth/me"), 401)
+    print("PASS OIDC hosted-domain restriction", flush=True)
+
     teacher, teacher_identity = sign_in("teacher")
     student, student_identity = sign_in("student")
     assert teacher_identity["role"] == "instructor"

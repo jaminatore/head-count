@@ -12,8 +12,8 @@
         <span class="eyebrow">Classroom attendance</span>
         <h1>Sign in</h1>
         {% if configured %}
-        <p class="intro">Use your school account to manage classes or check in.</p>
-        <a class="button button-primary button-link" href="/auth/login">Continue with school SSO</a>
+        <p class="intro">Use an authorized account to manage classes or check in.</p>
+        <a class="button button-primary button-link" href="/auth/login">Continue to sign in</a>
         {% else %}
         <p class="intro">School SSO is not configured yet. Ask the administrator to set the OIDC environment variables.</p>
         {% endif %}

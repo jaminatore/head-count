@@ -7,6 +7,7 @@ x-app-env: &app-env
   OIDC_METADATA_URL: http://oidc:9000/.well-known/openid-configuration
   OIDC_CLIENT_ID: headcount-e2e
   OIDC_CLIENT_SECRET: e2e-secret-not-for-production
+  OIDC_REQUIRED_CLAIMS_JSON: '{"hd":"headcount.test"}'
   AUTH_SESSION_SECRET: e2e-state-signing-secret-not-for-production
   PUBLIC_BASE_URL: http://nginx
   COOKIE_SECURE: "false"

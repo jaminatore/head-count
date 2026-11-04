@@ -21,6 +21,7 @@ from app.redis_client import redis_client
 OIDC_METADATA_URL = os.environ.get("OIDC_METADATA_URL", "")
 OIDC_CLIENT_ID = os.environ.get("OIDC_CLIENT_ID", "")
 OIDC_CLIENT_SECRET = os.environ.get("OIDC_CLIENT_SECRET", "")
+OIDC_REQUIRED_CLAIMS_JSON = os.environ.get("OIDC_REQUIRED_CLAIMS_JSON", "")
 AUTH_SESSION_SECRET = os.environ.get("AUTH_SESSION_SECRET", "")
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:1234").rstrip("/")
 COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "false").lower() == "true"
@@ -29,7 +30,41 @@ COOKIE_NAME = "headcount_session"
 
 OIDC_CONFIGURED = all((OIDC_METADATA_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, AUTH_SESSION_SECRET))
 
+def required_identity_claims() -> dict[str, tuple[str, ...]]:
+    """Return exact-match rules for claims in the verified OIDC ID token."""
+    if not OIDC_REQUIRED_CLAIMS_JSON.strip():
+        return {}
+    try:
+        configured = json.loads(OIDC_REQUIRED_CLAIMS_JSON)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("OIDC_REQUIRED_CLAIMS_JSON must be a JSON object") from exc
+    if not isinstance(configured, dict) or not configured:
+        raise RuntimeError("OIDC_REQUIRED_CLAIMS_JSON must be a nonempty JSON object")
+    rules = {}
+    for claim, allowed in configured.items():
+        values = [allowed] if isinstance(allowed, str) else allowed
+        if (not isinstance(claim, str) or not claim or not isinstance(values, list)
+                or not values or any(not isinstance(value, str) or not value for value in values)):
+            raise RuntimeError("OIDC_REQUIRED_CLAIMS_JSON must map claim names to strings or nonempty string lists")
+        rules[claim] = tuple(values)
+    return rules
+
+
+def is_google_issuer(issuer: str) -> bool:
+    return issuer in ("https://accounts.google.com", "accounts.google.com")
+
+
+def enforce_identity_policy(claims: dict) -> None:
+    """Reject an identity before provisioning or creating a browser session."""
+    if is_google_issuer(claims.get("iss", "")) and claims.get("email_verified") is not True:
+        raise HTTPException(status_code=403, detail="Verified Google email required")
+    for claim, allowed in required_identity_claims().items():
+        if claims.get(claim) not in allowed:
+            raise HTTPException(status_code=403, detail="School account is not allowed")
+
+
 def validate_production_config() -> None:
+    policy = required_identity_claims()
     if not OIDC_CONFIGURED or any(
         value.startswith("REPLACE_WITH_")
         for value in (OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, AUTH_SESSION_SECRET)
@@ -37,6 +72,8 @@ def validate_production_config() -> None:
         raise RuntimeError("Production requires configured school OIDC credentials")
     if urlparse(OIDC_METADATA_URL).scheme != "https":
         raise RuntimeError("Production requires an HTTPS OIDC metadata URL")
+    if urlparse(OIDC_METADATA_URL).hostname == "accounts.google.com" and "hd" not in policy:
+        raise RuntimeError("Production Google sign-in requires an allowed Workspace hd claim")
     public_url = urlparse(PUBLIC_BASE_URL)
     if public_url.scheme != "https" or not public_url.hostname or public_url.path not in ("", "/") or not COOKIE_SECURE:
         raise RuntimeError("Production requires an HTTPS public origin and secure cookies")

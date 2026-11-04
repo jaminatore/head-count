@@ -26,3 +26,18 @@ def test_production_config_accepts_secure_settings(monkeypatch):
     monkeypatch.setattr(auth, "COOKIE_SECURE", False)
     with pytest.raises(RuntimeError, match="secure cookies"):
         auth.validate_production_config()
+
+
+def test_production_google_requires_workspace_claim(monkeypatch):
+    monkeypatch.setattr(auth, "OIDC_CONFIGURED", True)
+    monkeypatch.setattr(auth, "OIDC_METADATA_URL", "https://accounts.google.com/.well-known/openid-configuration")
+    monkeypatch.setattr(auth, "OIDC_CLIENT_ID", "headcount")
+    monkeypatch.setattr(auth, "OIDC_CLIENT_SECRET", "client-secret")
+    monkeypatch.setattr(auth, "AUTH_SESSION_SECRET", "a" * 48)
+    monkeypatch.setattr(auth, "PUBLIC_BASE_URL", "https://attendance.school.edu")
+    monkeypatch.setattr(auth, "COOKIE_SECURE", True)
+    monkeypatch.setattr(auth, "OIDC_REQUIRED_CLAIMS_JSON", "")
+    with pytest.raises(RuntimeError, match="Workspace hd claim"):
+        auth.validate_production_config()
+    monkeypatch.setattr(auth, "OIDC_REQUIRED_CLAIMS_JSON", '{"hd":"school.edu"}')
+    auth.validate_production_config()

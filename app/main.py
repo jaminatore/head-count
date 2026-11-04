@@ -67,6 +67,7 @@ async def rotate_tokens():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    auth.required_identity_claims()
     if os.environ.get("APP_ENV") == "production":
         auth.validate_production_config()
     await check_schema()
@@ -234,6 +235,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_session
         raise HTTPException(status_code=401, detail="School identity is incomplete")
     if claims.get("email_verified") is False:
         raise HTTPException(status_code=403, detail="Verified school email required")
+    auth.enforce_identity_policy(claims)
     request.session.clear()
 
     result = await db.execute(select(User).where(User.oidc_issuer == issuer, User.oidc_subject == subject))

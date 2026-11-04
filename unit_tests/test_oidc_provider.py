@@ -28,5 +28,6 @@ def test_disposable_oidc_code_exchange():
         claims = jwt.decode(response.json()["id_token"], {"keys": [public_jwk]})
         claims.validate()
         assert claims["sub"] == "e2e-teacher"
+        assert claims["hd"] == "headcount.test"
         assert claims["nonce"] == "test-nonce"
         assert client.post("/token", data={"grant_type": "authorization_code", "code": code, "redirect_uri": REDIRECT_URI}, auth=(CLIENT_ID, CLIENT_SECRET)).status_code == 400

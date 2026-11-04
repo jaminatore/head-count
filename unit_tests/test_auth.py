@@ -71,3 +71,25 @@ async def test_student_cannot_use_instructor_access():
     with pytest.raises(HTTPException) as error:
         await auth.require_instructor(auth.AuthContext(user=student, csrf="example"))
     assert error.value.status_code == 403
+
+
+def test_oidc_claim_policy_rejects_unlisted_and_missing_claims(monkeypatch):
+    monkeypatch.setattr(auth, "OIDC_REQUIRED_CLAIMS_JSON", '{"hd":["school.edu","students.school.edu"],"tid":"school-tenant"}')
+    accepted = {"iss": "https://accounts.google.com", "email_verified": True, "hd": "students.school.edu", "tid": "school-tenant"}
+    auth.enforce_identity_policy(accepted)
+    for rejected in (
+        {**accepted, "hd": "other.edu"},
+        {key: value for key, value in accepted.items() if key != "hd"},
+        {**accepted, "email_verified": False},
+        {**accepted, "email_verified": None},
+    ):
+        with pytest.raises(HTTPException) as error:
+            auth.enforce_identity_policy(rejected)
+        assert error.value.status_code == 403
+
+
+@pytest.mark.parametrize("configured", ['[]', '{}', '{"hd":[]}', '{"hd":3}', 'bad json'])
+def test_oidc_claim_policy_rejects_invalid_configuration(monkeypatch, configured):
+    monkeypatch.setattr(auth, "OIDC_REQUIRED_CLAIMS_JSON", configured)
+    with pytest.raises(RuntimeError, match="OIDC_REQUIRED_CLAIMS_JSON"):
+        auth.required_identity_claims()

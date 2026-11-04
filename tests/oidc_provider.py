@@ -17,8 +17,9 @@ CLIENT_ID = "headcount-e2e"
 CLIENT_SECRET = "e2e-secret-not-for-production"
 REDIRECT_URI = "http://nginx/auth/callback"
 USERS = {
-    "teacher": ("e2e-teacher", "teacher@headcount.test", "Test Teacher"),
-    "student": ("e2e-student", "student@headcount.test", "Test Student"),
+    "teacher": ("e2e-teacher", "teacher@headcount.test", "Test Teacher", "headcount.test"),
+    "student": ("e2e-student", "student@headcount.test", "Test Student", "headcount.test"),
+    "outsider": ("e2e-outsider", "outsider@other.test", "Test Outsider", "other.test"),
 }
 
 private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -102,7 +103,7 @@ async def token(request: Request):
     code_data = codes.pop(form.get("code", ""), None)
     if code_data is None or code_data[2] < time.time():
         raise HTTPException(400, "Invalid or expired code")
-    subject, email, name = USERS[code_data[0]]
+    subject, email, name, hosted_domain = USERS[code_data[0]]
     now = int(time.time())
     claims = {
         "iss": ISSUER,
@@ -113,6 +114,7 @@ async def token(request: Request):
         "email": email,
         "email_verified": True,
         "name": name,
+        "hd": hosted_domain,
     }
     if code_data[1]:
         claims["nonce"] = code_data[1]
