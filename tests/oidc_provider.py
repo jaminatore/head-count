@@ -1,6 +1,7 @@
-"""Disposable OIDC issuer for the isolated end-to-end Compose stack only."""
+"""Disposable OIDC issuer for CI and the loopback-only local demo."""
 
 import base64
+import os
 import secrets
 import time
 from urllib.parse import parse_qs, urlencode
@@ -13,9 +14,11 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 
 ISSUER = "http://oidc:9000"
+AUTHORIZATION_ORIGIN = os.environ.get("TEST_OIDC_BROWSER_ORIGIN", ISSUER).rstrip("/")
 CLIENT_ID = "headcount-e2e"
 CLIENT_SECRET = "e2e-secret-not-for-production"
-REDIRECT_URI = "http://nginx/auth/callback"
+REDIRECT_URI = os.environ.get("TEST_OIDC_REDIRECT_URI", "http://nginx/auth/callback")
+LOGIN_URL = os.environ.get("TEST_OIDC_LOGIN_URL", "")
 USERS = {
     "teacher": ("e2e-teacher", "teacher@headcount.test", "Test Teacher", "headcount.test"),
     "student": ("e2e-student", "student@headcount.test", "Test Student", "headcount.test"),
@@ -48,6 +51,8 @@ def select_user(user: str):
     if user not in USERS:
         raise HTTPException(404, "Unknown test user")
     response = JSONResponse({"selected": user})
+    if LOGIN_URL:
+        response = RedirectResponse(LOGIN_URL, status_code=303)
     response.set_cookie("test_user", user, httponly=True, samesite="lax")
     return response
 
@@ -56,7 +61,7 @@ def select_user(user: str):
 def discovery():
     return {
         "issuer": ISSUER,
-        "authorization_endpoint": ISSUER + "/authorize",
+        "authorization_endpoint": AUTHORIZATION_ORIGIN + "/authorize",
         "token_endpoint": ISSUER + "/token",
         "userinfo_endpoint": ISSUER + "/userinfo",
         "jwks_uri": ISSUER + "/jwks",

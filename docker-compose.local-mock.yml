@@ -1,0 +1,26 @@
+# Local, disposable identity provider. Never include this override in production.
+services:
+  oidc:
+    build: .
+    command: ["uvicorn", "tests.oidc_provider:app", "--host", "0.0.0.0", "--port", "9000"]
+    environment:
+      TEST_OIDC_BROWSER_ORIGIN: http://localhost:9000
+      TEST_OIDC_REDIRECT_URI: http://localhost:1234/auth/callback
+      TEST_OIDC_LOGIN_URL: http://localhost:1234/auth/login
+    ports:
+      - "127.0.0.1:9000:9000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/healthz', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    environment:
+      OIDC_METADATA_URL: http://oidc:9000/.well-known/openid-configuration
+      OIDC_CLIENT_ID: headcount-e2e
+      OIDC_CLIENT_SECRET: e2e-secret-not-for-production
+      OIDC_REQUIRED_CLAIMS_JSON: '{"hd":"headcount.test"}'
+    depends_on:
+      oidc:
+        condition: service_healthy
