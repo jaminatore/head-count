@@ -3,22 +3,78 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Attendance</title>
+    <title>Headcount · Live attendance</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="/static/admin.js" defer></script>
 </head>
 <body>
-    <main>
-        <span class="label">Live Attendance • Est. 2026</span>
-        <h1>Attendance</h1>
-        <div class="qr-slot">
-            <img id="qr" src="{{ qr }}" alt="QR Code">
-        </div>
-        <div>
-            <button id="start">Start Attendance</button>
-            <p id="status"></p>
+    <main class="dashboard">
+        <header class="page-header">
+            <div class="topline"><div class="brand"><span class="brand-mark" aria-hidden="true">H</span> Headcount</div><nav class="header-actions"><a class="text-button" href="/records">Records</a><button id="logout" class="text-button" type="button" disabled>Sign out</button></nav></div>
+            <span class="eyebrow">Instructor dashboard</span>
+            <h1>Live attendance</h1>
+            <p class="intro">Start a session, then display the rotating QR code for your class.</p>
+        </header>
+
+        <div class="workspace">
+            <section class="panel controls" aria-labelledby="setup-title">
+                <div class="panel-heading">
+                    <span class="step">01</span>
+                    <div>
+                        <h2 id="setup-title">Session setup</h2>
+                        <p>Choose the class and how often its code changes.</p>
+                    </div>
+                </div>
+
+                <form id="session-form">
+                    <label for="course">Course</label>
+                    <select id="course" name="course" required disabled>
+                        <option value="">Loading courses…</option>
+                    </select>
+
+                    <label for="reload-time">Rotate code every</label>
+                    <div class="input-suffix">
+                        <input id="reload-time" name="reload-time" type="number" min="1" step="1" value="5" required>
+                        <span>seconds</span>
+                    </div>
+                    <p class="field-help">Students must scan the current code to check in.</p>
+
+                    <button class="button button-primary" id="start" type="submit" disabled>Start attendance</button>
+                </form>
+
+                <div class="session-details" id="session-details" hidden>
+                    <div class="detail-row"><span>Course</span><strong id="active-course"></strong></div>
+                    <div class="detail-row"><span>Session ID</span><code id="session-id"></code></div>
+                    <div class="detail-row"><span>Code rotation</span><strong id="active-reload"></strong></div>
+                    <button class="button button-secondary" id="end" type="button">End attendance</button>
+                </div>
+            </section>
+
+            <section class="panel live-panel" aria-labelledby="live-title">
+                <div class="panel-heading">
+                    <span class="step">02</span>
+                    <div>
+                        <h2 id="live-title">Classroom display</h2>
+                        <p>Keep this page open while students check in.</p>
+                    </div>
+                </div>
+
+                <div class="live-state" id="live-state" data-state="idle">
+                    <span class="state-dot" aria-hidden="true"></span>
+                    <span id="state-label">Not started</span>
+                </div>
+                <p class="live-count" id="live-count" hidden>0 of 0 students checked in</p>
+                <div class="qr-slot">
+                    <div class="qr-placeholder" id="qr-placeholder">
+                        <span class="placeholder-icon" aria-hidden="true">▦</span>
+                        <span>Your live QR code will appear here</span>
+                    </div>
+                    <img id="qr" alt="Current attendance QR code" hidden>
+                </div>
+                <p class="status" id="status" role="status" aria-live="polite">Choose a course to get started.</p>
+            </section>
         </div>
     </main>
-    <footer>served by instance <code>{{ instance }}</code></footer>
+    <footer>Headcount · served by instance <code>{{ instance }}</code></footer>
 </body>
 </html>

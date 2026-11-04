@@ -26,7 +26,7 @@ async def seed():
         if "--reset" in sys.argv:
             await clear_existing(session)
 
-        professor = User(username="prof_ada", email="prof.ada@example.com", password_hash="not_a_real_hash")
+        professor = User(username="prof_ada", email="prof.ada@example.com", password_hash="not_a_real_hash", role="instructor")
         student_a = User(username="student_a", email="student.a@example.com", password_hash="not_a_real_hash")
         student_b = User(username="student_b", email="student.b@example.com", password_hash="not_a_real_hash")
         student_c = User(username="student_c", email="student.c@example.com", password_hash="not_a_real_hash")

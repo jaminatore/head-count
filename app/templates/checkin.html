@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <title>Check in · Headcount</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="/static/checkin.js" defer></script>
+</head>
+<body>
+    <main class="auth-shell panel checkin-panel">
+        <div class="topline"><div class="brand"><span class="brand-mark" aria-hidden="true">H</span> Headcount</div><button id="logout" class="text-button" type="button">Sign out</button></div>
+        <span class="eyebrow">Student check-in</span>
+        <h1>Attendance</h1>
+        <p class="intro">Signed in as {{ user.email }}</p>
+        <div id="checkin-state" class="checkin-state" data-state="ready" aria-hidden="true">✓</div>
+        <h2 id="checkin-title">Ready to check in</h2>
+        <p id="checkin-message" class="checkin-message" role="status" aria-live="polite">Scan the live QR code displayed in your classroom.</p>
+        <p class="field-help">If you just signed in after scanning, scan the current code again—it changes every few seconds.</p>
+        <div class="student-courses">
+            <h2>Join a course</h2>
+            <p class="checkin-message">Enter the class join code from your instructor. They must approve your request before you can check in.</p>
+            <form id="join-form" class="join-form">
+                <label for="student-join-code">Class join code</label>
+                <input id="student-join-code" required minlength="6" maxlength="20" autocomplete="off" placeholder="Class code">
+                <button class="button button-primary" type="submit">Request to join</button>
+            </form>
+            <div id="student-course-list" class="stack-list"></div>
+        </div>
+    </main>
+</body>
+</html>

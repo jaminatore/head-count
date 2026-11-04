@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in · Headcount</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <main class="auth-shell panel">
+        <div class="brand"><span class="brand-mark" aria-hidden="true">H</span> Headcount</div>
+        <span class="eyebrow">Classroom attendance</span>
+        <h1>Sign in</h1>
+        {% if configured %}
+        <p class="intro">Use your school account to manage classes or check in.</p>
+        <a class="button button-primary button-link" href="/auth/login">Continue with school SSO</a>
+        {% else %}
+        <p class="intro">School SSO is not configured yet. Ask the administrator to set the OIDC environment variables.</p>
+        {% endif %}
+    </main>
+</body>
+</html>

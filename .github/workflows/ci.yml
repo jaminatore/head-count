@@ -1,0 +1,30 @@
+name: headcount checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r requirements.txt pytest pytest-asyncio
+      - run: python -m pytest -q unit_tests
+      - run: HEADCOUNT_ENV_FILE=.env.prod.example docker compose --env-file .env.prod.example -f docker-compose.prod.yml config --quiet
+      - run: docker run --rm --entrypoint promtool -v "$PWD/observability/alerts.yml:/etc/prometheus/alerts.yml:ro" prom/prometheus:v3.5.0 check rules /etc/prometheus/alerts.yml
+      - run: docker run --rm -e HEADCOUNT_DOMAIN=attendance.example.edu -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2.10.2-alpine caddy validate --config /etc/caddy/Caddyfile
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose -f docker-compose.e2e.yml config --quiet
+      - run: docker compose -f docker-compose.e2e.yml up -d --build --scale app=3 nginx prometheus seed
+      - run: docker compose -f docker-compose.e2e.yml run --build --rm --no-deps e2e
+      - if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v --remove-orphans
